@@ -23,7 +23,7 @@ from restore_state import RestoreJournal
 from tests_runner import Runner
 from vehicle import Detector, calibration
 
-EXTENSION_VERSION = "1.6.1"     # keep in sync with the Dockerfile `version` label
+EXTENSION_VERSION = "1.6.2"     # keep in sync with the Dockerfile `version` label
 PORT = int(os.environ.get("SELFTEST_PORT", "9450"))
 LOG_DIR = os.environ.get("SELFTEST_LOG_DIR", "/app/logs")
 SIM = os.environ.get("SELFTEST_SIM", "").strip().lower()

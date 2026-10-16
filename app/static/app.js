@@ -661,7 +661,11 @@ new Vue({
     },
     scheduleAdvance () {
       this.cancelAdvance()
-      this.advanceCountdown = 3
+      // Thruster to thruster is quick (the motor session stays armed);
+      // other tests get a little longer to look away from the vehicle.
+      const next = this.tests[this.testIndex + 1]
+      const motorToMotor = this.currentTest && this.currentTest.category === 'motor' && next && next.category === 'motor'
+      this.advanceCountdown = motorToMotor ? 1 : 3
       this._advanceTimer = setInterval(() => {
         this.advanceCountdown--
         if (this.advanceCountdown <= 0) {
