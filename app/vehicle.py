@@ -96,10 +96,10 @@ EXPECTATIONS = {
     "motor": "the thruster spinning",
     "motor_boat": "the thruster spinning in the direction shown",
     "lights": "the light ramping from dim to full brightness and back",
-    "actuator": "the actuator moving through its full range (gripper opening and closing)",
+    "actuator": "the gripper driving all the way to one end, then all the way back",
     "focus": "the camera focus changing (watch the video feed)",
     "zoom": "the camera zoom changing (watch the video feed)",
-    "tilt": "the camera tilting smoothly up and down through its full range",
+    "tilt": "the camera tilting smoothly through its full range, up and down",
 }
 
 
@@ -206,12 +206,11 @@ class Detector:
             }
             for t in tests:
                 if t["category"] == "tilt":
-                    # MNT1_TYPE 1 = Servo (stabilised), 7 = BrushlessPWM
-                    # (same servo backend, no stabilisation). Either way the
-                    # mount owns the output and is driven by mount commands;
-                    # with no mount configured the raw servo is swept.
+                    # The tilt servo is swept directly with DO_SET_SERVO. When
+                    # the mount is stabilised (MNT1_TYPE=1) stabilisation is
+                    # switched off (MNT1_TYPE=7 + reboot) for the test.
                     t["mount"] = mount
-                    t["method"] = "mount" if mount["type"] in (1, 7) else "servo"
+                    t["stabilized"] = mount["type"] == 1
 
         tests.sort(key=lambda t: (TEST_ORDER.index(t["category"]), t["channel"]))
 

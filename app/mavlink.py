@@ -288,14 +288,16 @@ class MavlinkClient:
             "param_id": str_to_chars(param_id),
         }), f"PARAM_REQUEST_READ:{param_id}")
 
-    def _await_param(self, param_id, deadline, reject_stamp, repoke):
+    def _await_param(self, param_id, deadline, reject_stamp, repoke, want=None):
         last_poke = time.monotonic()
         while time.monotonic() < deadline:
             msg, stamp = self.message("PARAM_VALUE")
             if msg is not None:
                 decoded = self._decode_param(msg)
                 fresh = reject_stamp is None or stamp != reject_stamp
-                if decoded["name"] == param_id and fresh:
+                matches = want is None or (decoded["value"] is not None and
+                                           abs(float(decoded["value"]) - want) <= 1e-3 * max(1.0, abs(want)))
+                if decoded["name"] == param_id and fresh and matches:
                     return decoded
             if time.monotonic() - last_poke >= 1.0:
                 repoke()
@@ -332,9 +334,16 @@ class MavlinkClient:
             deadline = time.monotonic() + timeout_s
             if not send():
                 raise MavlinkError("mavlink2rest unreachable")
-            result = self._await_param(param_id, deadline, before, send)
+            # mavlink2rest can deliver a late duplicate of an earlier
+            # PARAM_VALUE (e.g. the reply to the read just before this
+            # write), so only a reply carrying the new value counts as the ack.
+            result = self._await_param(param_id, deadline, before, send,
+                                       want=float(value))
         if result is None:
-            raise MavlinkError(f"no PARAM_VALUE ack for {param_id}")
+            actual = self.param_get(param_id)
+            if actual is not None and abs(actual - float(value)) <= 1e-3 * max(1.0, abs(value)):
+                return actual
+            raise MavlinkError(f"{param_id} write not confirmed (reads back {actual})")
         return float(result["value"])
 
     # -- BlueOS helpers -----------------------------------------------------

@@ -160,6 +160,34 @@ Vue.component('result-chip', {
   template: '<v-chip small label :color="color" text-color="white" class="font-weight-medium">{{ result || "—" }}</v-chip>'
 })
 
+// Thruster positions, top-down with the bow up. Numbering follows ArduSub
+// (libraries/AP_Motors/AP_Motors6DOF.cpp) and the BlueOS vehicle models:
+// 1 front-right, 2 front-left, 3 rear-right, 4 rear-left (vectored);
+// standard verticals 5 right / 6 left; Heavy verticals 5 FR, 6 FL, 7 RR, 8 RL.
+const ROV_HORIZONTAL = [
+  { n: 1, x: 212, y: 84, a: 45 }, { n: 2, x: 108, y: 84, a: -45 },
+  { n: 3, x: 212, y: 296, a: -45 }, { n: 4, x: 108, y: 296, a: 45 }
+]
+const ROV_VERTICAL = {
+  rov: [{ n: 5, x: 266, y: 196 }, { n: 6, x: 54, y: 196 }],
+  heavy: [{ n: 5, x: 270, y: 116 }, { n: 6, x: 50, y: 116 }, { n: 7, x: 270, y: 264 }, { n: 8, x: 50, y: 264 }]
+}
+
+Vue.component('frame-diagram', {
+  // kind: 'rov' | 'heavy' | 'boat'; active/failed: motor numbers (ROV) or 'left'/'right' (boat)
+  props: { kind: String, active: { type: Array, default: () => [] }, failed: { type: Array, default: () => [] } },
+  computed: {
+    horizontal () { return ROV_HORIZONTAL },
+    vertical () { return ROV_VERTICAL[this.kind] || [] }
+  },
+  methods: {
+    cls (key) {
+      return { active: this.active.includes(key), failed: this.failed.includes(key) }
+    }
+  },
+  template: '#frame-diagram-template'
+})
+
 Vue.component('blueboat-rotation', {
   props: ['side'],   // 'left' | 'right' | null
   template: '#blueboat-rotation-template'
@@ -207,6 +235,8 @@ new Vue({
     paused: false,
     pollTimer: null,
     telemetryTimer: null,
+    // end-of-sequence thruster review
+    review: { open: false, done: false, selected: [], submitted: false, failed: [], busy: false },
     // finish
     finish: null,
     finishing: false
@@ -248,6 +278,35 @@ new Vue({
     boatSide () {
       if (!this.isBoat || !this.currentTest || this.currentTest.category !== 'motor') return null
       return { 73: 'left', 74: 'right' }[this.currentTest.function] || null
+    },
+    frameKind () {
+      if (!this.vehicle) return null
+      if (this.isBoat) return 'boat'
+      if (this.vehicle.firmware === 'ArduSub' && [1, 2].includes(Number(this.vehicle.frame))) {
+        return Number(this.vehicle.frame) === 2 ? 'heavy' : 'rov'
+      }
+      return null
+    },
+    motorTests () { return this.tests.filter(t => t.category === 'motor') },
+    motorFailedKeys () {
+      return this.motorTests
+        .filter(t => this.review.open ? this.review.selected.includes(t.id) : (this.results[t.id] || {}).result === 'FAIL')
+        .map(this.motorKey)
+    },
+    motorTroubleshooting () {
+      const tips = [
+        'Check the thruster\'s ESC signal cable is plugged into the correct autopilot output, with signal and ground the right way round.',
+        'Listen for the ESC start-up beeps when the battery is connected; no beeps means the ESC has no power (check the power distribution and connectors).',
+        'With power off, spin the propeller by hand. It should turn freely with no grinding; clear any debris or hair.',
+        'Check the three thruster wires to the ESC (or penetrator connection) for damage or loose joints.',
+        'Swap the signal cable with a working thruster\'s output: if the fault moves, it is the autopilot output or cable; if it stays, it is the ESC or thruster.'
+      ]
+      if (this.isBoat) {
+        tips.splice(3, 0, 'If it spins the wrong way, swap any two of the three thruster wires and check the correct-handed propeller is fitted.')
+      } else {
+        tips.push('If a thruster pushes the wrong way, change its MOT_n_DIRECTION parameter in BlueOS Vehicle Setup → PWM Outputs.')
+      }
+      return tips
     },
     restorePending () {
       const p = (this.status && this.status.restore_pending) || {}
@@ -322,6 +381,7 @@ new Vue({
       try {
         await api.post('api/session/start', this.form)
         this.testIndex = 0
+        this.review = { open: false, done: false, selected: [], submitted: false, failed: [], busy: false }
         this.finish = null
         this.net.result = null
         this.devices.result = null
@@ -465,8 +525,57 @@ new Vue({
       clearInterval(this._advanceTimer)
       this.advanceCountdown = null
     },
+    testDuration (t) {
+      const st = (this.status && this.status.settings) || {}
+      const key = { motor: 'motor_duration_s', actuator: 'actuator_duration_s' }[t.category] || 'duration_s'
+      return st[key] || 5
+    },
+    motorKey (t) {
+      if (this.isBoat) return { 73: 'left', 74: 'right' }[t.function] || t.name
+      return t.motor_number
+    },
+    openReview () {
+      this.review = {
+        open: true,
+        done: false,
+        submitted: false,
+        busy: false,
+        failed: [],
+        selected: this.motorTests.filter(t => (this.results[t.id] || {}).result === 'FAIL').map(t => t.id)
+      }
+    },
+    toggleReview (id) {
+      if (this.review.submitted) return
+      const i = this.review.selected.indexOf(id)
+      if (i >= 0) this.review.selected.splice(i, 1)
+      else this.review.selected.push(id)
+    },
+    async submitReview () {
+      this.review.busy = true
+      try {
+        const res = await api.post('api/motors/review', { failed_ids: this.review.selected })
+        this.review.failed = res.failed
+        this.review.submitted = true
+        await this.refresh()
+        if (!res.failed.length) this.continueAfterReview()
+      } catch (e) { this.testError = e.message } finally { this.review.busy = false }
+    },
+    continueAfterReview () {
+      this.review.open = false
+      this.review.done = true
+      this.nextTest(false)
+    },
     async nextTest (autostart) {
       this.cancelAdvance()
+      const cur = this.currentTest
+      const next = this.tests[this.testIndex + 1]
+      if (cur && cur.category === 'motor' && (!next || next.category !== 'motor') && !this.review.done) {
+        // end of the thruster sequence: stop the motors, then give the tester
+        // a second chance to report thrusters that didn't work
+        try { await api.post('api/motors/end') } catch (e) { /* ignore */ }
+        this.openReview()
+        return
+      }
       if (this.testIndex < this.tests.length - 1) {
         const wasMotor = this.currentTest && this.currentTest.category === 'motor'
         this.testIndex++
@@ -490,6 +599,8 @@ new Vue({
     selectTest (i) {
       if (this.busyTest) return
       this.cancelAdvance()
+      this.review.open = false
+      if (this.tests[i] && this.tests[i].category === 'motor') this.review.done = false
       this.testIndex = i
       this.testState = null
     },
@@ -509,7 +620,7 @@ new Vue({
       if (e.code !== 'Space' && e.key !== ' ') return
       const tag = (e.target && e.target.tagName) || ''
       if (['INPUT', 'TEXTAREA'].includes(tag)) return
-      if (this.step === 5) {
+      if (this.step === 5 && !this.review.open) {
         e.preventDefault()
         if (this.running) this.flagFail()
       }

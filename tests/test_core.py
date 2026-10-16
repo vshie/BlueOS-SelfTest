@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import devices  # noqa: E402
 from restore_state import RestoreJournal  # noqa: E402
 from sim import SimClient  # noqa: E402
-from tests_runner import Runner, tilt_angle, triangle  # noqa: E402
+from tests_runner import Runner, centered_sweep, end_to_end, light_ramp, triangle  # noqa: E402
 from vehicle import Detector, calibration, classify_output  # noqa: E402
 
 
@@ -26,7 +26,7 @@ def test_detect_bluerov2():
     assert cats.count("lights") == 2
     assert "actuator" in cats and cats[-1] == "tilt"
     tilt = v["tests"][-1]
-    assert tilt["method"] == "mount" and tilt["channel"] == 16
+    assert tilt["channel"] == 16
     m2 = next(t for t in v["tests"] if t["name"] == "Motor 2")
     assert m2["motor_index"] == 1 and m2["direction"] == -1
 
@@ -60,8 +60,11 @@ def test_calibration_math_and_warnings():
 
 def test_sweep_shapes():
     assert triangle(0) == 0 and triangle(0.5) == 1 and triangle(1) == 0
-    assert tilt_angle(0.25, -30, 45) == 45
-    assert abs(tilt_angle(0.75, -30, 45) + 30) < 1e-9
+    assert centered_sweep(0, 1100, 1500, 1900) == 1500
+    assert centered_sweep(0.25, 1100, 1500, 1900) == 1900
+    assert centered_sweep(0.75, 1100, 1500, 1900) == 1100
+    assert light_ramp(0.05) == 0 and light_ramp(0.5) == 1 and light_ramp(0.97) == 0
+    assert end_to_end(0.2) == 1 and end_to_end(0.8) == 0
 
 
 def make_runner(tmp_path, profile="bluerov2"):
@@ -71,6 +74,8 @@ def make_runner(tmp_path, profile="bluerov2"):
     results = []
     runner = Runner(client, journal, on_result=results.append, on_event=lambda t: None)
     runner.settings["duration_s"] = 1.0
+    runner.settings["motor_duration_s"] = 1.0
+    runner.settings["actuator_duration_s"] = 1.0
     runner.set_vehicle(vehicle)
     return client, vehicle, journal, runner, results
 
@@ -97,7 +102,7 @@ def test_light_sweep_restores_function(tmp_path):
 
 def test_watchdog_abort_restores(tmp_path):
     client, vehicle, journal, runner, results = make_runner(tmp_path)
-    runner.settings["duration_s"] = 10.0
+    runner.settings["actuator_duration_s"] = 10.0
     act = next(t for t in vehicle["tests"] if t["category"] == "actuator")
     runner.start(act)
     time.sleep(3.0)          # no keepalives -> watchdog fires

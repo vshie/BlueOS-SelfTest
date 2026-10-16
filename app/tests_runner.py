@@ -35,7 +35,7 @@ import time
 import traceback
 from typing import Callable, Optional
 
-from mavlink import MavlinkClient, MavlinkError
+from mavlink import MavlinkClient, MavlinkError, chars_to_str
 from restore_state import RestoreJournal
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,9 @@ MOTOR_SESSION_IDLE_S = 20.0
 SUB_MOTOR_COOLDOWN_S = 11.0     # ArduSub: 10 s after a motor test timeout
 SUB_MANUAL_MODE = 19
 NEUTRAL_PWM = 1500
-DEFAULT_MOTOR_OFFSET = 100      # 1600 us: gentle, clearly visible spin
+DEFAULT_MOTOR_OFFSET = 200      # 1700 us: clearly visible spin without being violent
+MOTOR_TEST_DURATION_S = 3.0
+ACTUATOR_TEST_DURATION_S = 8.0  # 4 s each way so the gripper reaches both end stops
 REBOOT_TIMEOUT_S = 120.0
 
 
@@ -61,10 +63,31 @@ def triangle(frac: float) -> float:
     return 1.0 - abs(2.0 * frac - 1.0)
 
 
-def tilt_angle(frac: float, pitch_min: float, pitch_max: float) -> float:
-    """0 -> max -> min -> 0 (one sine period), honouring asymmetric limits."""
+def light_ramp(frac: float) -> float:
+    """Off, ramp to full, hold full, ramp back down, off."""
+    if frac < 0.1 or frac > 0.95:
+        return 0.0
+    if frac < 0.45:
+        return (frac - 0.1) / 0.35
+    if frac < 0.65:
+        return 1.0
+    return 1.0 - (frac - 0.65) / 0.3
+
+
+def end_to_end(frac: float) -> float:
+    """Hold MAX, then hold MIN: a speed-controlled gripper (Newton) only
+    reaches its end stops if the command is held at full range."""
+    return 1.0 if frac < 0.5 else 0.0
+
+
+SWEEP_PROFILES = {"lights": light_ramp, "actuator": end_to_end}
+CENTERED = ("tilt", "focus", "zoom")
+
+
+def centered_sweep(frac: float, lo: int, trim: int, hi: int) -> int:
+    """trim -> max -> min -> trim (one sine period), for camera tilt/focus/zoom."""
     s = math.sin(2.0 * math.pi * min(max(frac, 0.0), 1.0))
-    return s * pitch_max if s >= 0 else -s * pitch_min
+    return int(round(trim + s * (hi - trim) if s >= 0 else trim + s * (trim - lo)))
 
 
 class Runner:
@@ -82,7 +105,9 @@ class Runner:
         self._fail = threading.Event()
         self._last_keepalive = time.monotonic()
         self._vehicle: dict = {}
-        self.settings = {"duration_s": TEST_DURATION_S, "motor_offset": DEFAULT_MOTOR_OFFSET}
+        self.settings = {"duration_s": TEST_DURATION_S, "motor_duration_s": MOTOR_TEST_DURATION_S,
+                         "actuator_duration_s": ACTUATOR_TEST_DURATION_S,
+                         "motor_offset": DEFAULT_MOTOR_OFFSET}
 
         # motor session
         self._ms_lock = threading.Lock()
@@ -138,11 +163,15 @@ class Runner:
         with self._lock:
             self._state = self._idle_state()
             self._state.update(test_id=test["id"], phase="preparing",
-                               message="Preparing", duration=self.settings["duration_s"])
+                               message="Preparing", duration=self.duration_for(test))
         self._thread = threading.Thread(target=self._run, args=(test,), daemon=True,
                                         name=f"test-{test['id']}")
         self._thread.start()
         return None
+
+    def duration_for(self, test: dict) -> float:
+        key = {"motor": "motor_duration_s", "actuator": "actuator_duration_s"}.get(test["kind"], "duration_s")
+        return float(self.settings[key])
 
     def flag_fail(self) -> None:
         with self._lock:
@@ -204,7 +233,7 @@ class Runner:
         """Run ``step(frac)`` at STREAM_HZ for the test duration.
 
         Returns the elapsed time at which SPACE was pressed, or None."""
-        duration = self.settings["duration_s"]
+        duration = self._state["duration"]
         self._set(phase="running", message="Running", elapsed=0.0)
         t0 = time.monotonic()
         period = 1.0 / STREAM_HZ
@@ -224,21 +253,29 @@ class Runner:
         changes: list = []
         result = {"id": test["id"], "name": test["name"], "channel": test["channel"],
                   "category": test["category"], "function": test["function"],
-                  "result": None, "fail_at_s": None, "error": None,
+                  "result": None, "fail_at_s": None, "error": None, "observed": None,
                   "param_changes": changes, "time": time.strftime("%H:%M:%S")}
         fail_at = None
+        stop_status = self._watch_statustext()
         try:
             kind = test["kind"]
             if kind == "motor":
                 fail_at = self._run_motor(test)
             else:
                 self.end_motor_session("Starting non-motor test")
-                if kind == "tilt" and test.get("method") == "mount":
-                    fail_at = self._run_mount_tilt(test, changes)
-                else:
-                    fail_at = self._run_servo_sweep(test, changes)
-            result["result"] = "FAIL" if fail_at is not None else "PASS"
+                if kind == "tilt":
+                    self._disable_tilt_stabilization(changes)
+                fail_at = self._run_servo_sweep(test, changes, result)
             result["fail_at_s"] = fail_at
+            if fail_at is not None:
+                result["result"] = "FAIL"
+            elif result.get("output_error"):
+                # The tester saw nothing wrong, but the autopilot output did
+                # not follow the command - report it rather than a false PASS.
+                result["result"] = "ERROR"
+                result["error"] = result.pop("output_error")
+            else:
+                result["result"] = "PASS"
         except TestAborted:
             result["result"] = "ABORTED"
             result["error"] = self._state.get("error") or "Aborted"
@@ -247,7 +284,28 @@ class Runner:
             result["result"] = "ERROR"
             result["error"] = str(e)
         finally:
-            self._finish(test, changes, result)
+            try:
+                self._finish(test, changes, result)
+            finally:
+                stop_status()
+
+    def _watch_statustext(self) -> Callable[[], None]:
+        """Copy autopilot STATUSTEXT messages into the run log while a test runs."""
+        stop = threading.Event()
+
+        def loop():
+            _, last = self.client.message("STATUSTEXT")
+            while not stop.is_set():
+                msg, stamp = self.client.message("STATUSTEXT")
+                if msg and stamp and stamp != last:
+                    last = stamp
+                    text = chars_to_str(msg.get("text"))
+                    if text:
+                        self.on_event(f"Autopilot: {text}")
+                stop.wait(0.3)
+
+        threading.Thread(target=loop, daemon=True, name="statustext").start()
+        return stop.set
 
     def _finish(self, test: dict, changes: list, result: dict) -> None:
         self._set(phase="restoring", message="Restoring vehicle settings")
@@ -271,24 +329,38 @@ class Runner:
                 self._ms_target = None
             self._ms_last_use = time.monotonic()
             return
-        if kind == "tilt" and test.get("method") == "mount":
-            mount = test.get("mount") or {}
-            self.client.mount_pitch(0)
-            if self.journal.original("MNT1_TYPE") is not None:
-                self._restore_param("MNT1_TYPE", changes)
-                self._reboot_and_wait(changes, check_abort=False)
-            else:
-                self.client.mount_mode(int(mount.get("default_mode") or 3))
-            return
-        # servo sweep: park output, then hand it back to its function
-        park = test["pwm_min"] if test["category"] == "lights" else test["pwm_trim"]
-        for _ in range(3):
-            self.client.set_servo(test["channel"], park)
-            time.sleep(0.05)
-        self._restore_param(f"SERVO{test['channel']}_FUNCTION", changes)
+        # park the output, then hand it back to its function
+        name = f"SERVO{test['channel']}_FUNCTION"
+        if self.journal.original(name) is not None:
+            park = test["pwm_min"] if test["category"] == "lights" else test["pwm_trim"]
+            for _ in range(3):
+                self.client.set_servo(test["channel"], park)
+                time.sleep(0.05)
+            self._restore_param(name, changes)
+        if kind == "tilt" and self.journal.original("MNT1_TYPE") is not None:
+            self._restore_param("MNT1_TYPE", changes)
+            self.on_event("Camera tilt: stabilization restored (MNT1_TYPE=1), rebooting autopilot")
+            self._reboot_and_wait(changes, check_abort=False)
 
-    # -- servo sweeps (lights, gripper/actuators, focus, zoom, raw tilt) ----------------
-    def _run_servo_sweep(self, test: dict, changes: list) -> Optional[float]:
+    # -- servo sweeps (lights, gripper/actuators, focus, zoom, camera tilt) ---------------
+    def _disable_tilt_stabilization(self, changes: list) -> None:
+        """Stabilised tilt (MNT1_TYPE=1) would fight the sweep as the vehicle
+        moves; switch to BrushlessPWM (7, same servo, no stabilisation) and
+        reboot. Restored, with another reboot, after the test. If the mount
+        isn't stabilised nothing is changed and no reboot happens."""
+        current = self.client.param_get("MNT1_TYPE")
+        if current is None or int(current) != 1:
+            changes.append(f"MNT1_TYPE={current if current is None else int(current)}: "
+                           "stabilization not enabled, no reboot needed")
+            return
+        if self.client.is_armed():
+            raise MavlinkError("Vehicle is armed - disarm before the camera tilt test")
+        self._set(message="Disabling camera stabilization (MNT1_TYPE 1 → 7)")
+        self.on_event("Camera tilt: disabling mount stabilization (MNT1_TYPE=7) and rebooting autopilot")
+        self._set_param("MNT1_TYPE", 7, changes)
+        self._reboot_and_wait(changes)
+
+    def _run_servo_sweep(self, test: dict, changes: list, result: dict) -> Optional[float]:
         ch = test["channel"]
         name = f"SERVO{ch}_FUNCTION"
         current = self.client.param_get(name)
@@ -302,38 +374,35 @@ class Runner:
         self._set(message=f"Taking control of output {ch}")
         self._set_param(name, 0, changes)
         lo, hi = test["pwm_min"], test["pwm_max"]
+        start_pwm = lo if test["category"] in ("lights", "actuator") else test["pwm_trim"]
+        ack = self.client.command_ack("MAV_CMD_DO_SET_SERVO", params={1: ch, 2: start_pwm})
+        if ack not in (None, "MAV_RESULT_ACCEPTED"):
+            raise MavlinkError(f"Autopilot rejected DO_SET_SERVO on output {ch} ({ack})")
+        profile = SWEEP_PROFILES.get(test["category"], triangle)
+        observed: list = []
+
+        trim = min(max(test["pwm_trim"], lo), hi)
 
         def step(frac):
-            pwm = int(lo + (hi - lo) * triangle(frac))
+            if test["category"] in CENTERED:
+                pwm = centered_sweep(frac, lo, trim, hi)
+            else:
+                pwm = int(round(lo + (hi - lo) * profile(frac)))
             self._set(pwm=pwm, value_label=f"{pwm} µs")
             self.client.set_servo(ch, pwm)
+            raw, _ = self.client.message("SERVO_OUTPUT_RAW")
+            if raw and raw.get(f"servo{ch}_raw"):
+                observed.append(int(raw[f"servo{ch}_raw"]))
 
-        return self._sweep_loop(step)
-
-    # -- camera tilt through the mount driver ----------------------------------------
-    def _run_mount_tilt(self, test: dict, changes: list) -> Optional[float]:
-        mount = test.get("mount") or {}
-        if self.client.is_armed():
-            raise MavlinkError("Vehicle is armed - disarm before the camera tilt test")
-        current = self.client.param_get("MNT1_TYPE")
-        if current is None:
-            raise MavlinkError("Could not read MNT1_TYPE")
-        if int(current) == 1:
-            # Stabilised servo mount: switch to BrushlessPWM (7), same servo
-            # output without stabilisation. Needs a reboot either way.
-            self._set(message="Disabling camera stabilization (MNT1_TYPE 1 → 7)")
-            self.on_event("Camera tilt: disabling mount stabilization (MNT1_TYPE=7) and rebooting autopilot")
-            self._set_param("MNT1_TYPE", 7, changes)
-            self._reboot_and_wait(changes)
-        pmin = float(mount.get("pitch_min") if mount.get("pitch_min") is not None else -45)
-        pmax = float(mount.get("pitch_max") if mount.get("pitch_max") is not None else 45)
-
-        def step(frac):
-            angle = tilt_angle(frac, pmin, pmax)
-            self._set(pwm=None, value_label=f"{angle:+.0f}°")
-            self.client.mount_pitch(angle)
-
-        return self._sweep_loop(step)
+        fail_at = self._sweep_loop(step)
+        if observed:
+            o_lo, o_hi = min(observed), max(observed)
+            result["observed"] = f"{o_lo}–{o_hi} µs"
+            changes.append(f"SERVO{ch} output observed {o_lo}–{o_hi} µs (commanded {lo}–{hi} µs)")
+            if fail_at is None and (o_hi - o_lo) < 0.5 * (hi - lo):
+                result["output_error"] = (f"Autopilot output {ch} only moved {o_lo}–{o_hi} µs "
+                                          f"while commanded {lo}–{hi} µs")
+        return fail_at
 
     def _reboot_and_wait(self, changes: list, check_abort: bool = True) -> None:
         self._set(phase="rebooting", message="Rebooting autopilot")
@@ -456,6 +525,9 @@ class Runner:
             self.client.disarm(force=True)
             if firmware == "ArduSub":
                 self._sub_motor_end = time.monotonic()
+                # ArduSub skips normal servo output while ap.motor_test is
+                # set; it clears 500 ms after the last motor test frame.
+                time.sleep(1.0)
                 if self._ms_saved_mode is not None and self._ms_saved_mode != SUB_MANUAL_MODE:
                     time.sleep(0.5)
                     self.client.set_mode(self._ms_saved_mode)
@@ -527,7 +599,9 @@ def wait_for_autopilot_reboot(client: MavlinkClient, report: Callable[[str], Non
     while time.monotonic() - start < REBOOT_TIMEOUT_S:
         _check()
         try:
-            if client.param_get("SYSID_THISMAV", timeout_s=2.0) is not None:
+            # SYSID_THISMAV was renamed MAV_SYSID in ArduPilot 4.7
+            if any(client.param_get(n, timeout_s=1.5) is not None
+                   for n in ("MAV_SYSID", "SYSID_THISMAV", "SERVO1_FUNCTION")):
                 time.sleep(2.0)   # let the mount/servo libraries initialise
                 return
         except MavlinkError:

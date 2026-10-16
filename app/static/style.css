@@ -75,3 +75,34 @@ kbd {
   .br-logo { height: 24px; }
   .metric { font-size: 30px; }
 }
+
+/* thruster position diagrams */
+.diagram-caption { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--tuna); margin-bottom: 6px; }
+.frame-diagram { display: inline-block; width: 100%; max-width: 300px; }
+.rov-svg { width: 100%; }
+.rov-svg .rov-frame { fill: #f4f6f8; stroke: var(--tuna); stroke-width: 3; }
+.rov-svg .rov-tube { fill: #e3e7ea; stroke: #c9cfd3; stroke-width: 2; }
+.rov-svg .rov-caption { font: 500 12px Roboto, sans-serif; fill: var(--tuna); letter-spacing: .8px; }
+.rov-svg .thruster rect, .rov-svg .thruster circle:not(.pulse) { fill: #fff; stroke: var(--oyster); stroke-width: 3; }
+.rov-svg .thruster text { font: 700 15px Roboto, sans-serif; fill: var(--oyster); }
+.rov-svg .thruster .pulse { fill: none; stroke: none; }
+.rov-svg .thruster.active rect, .rov-svg .thruster.active circle:not(.pulse) { fill: var(--br-blue); stroke: var(--mariner); }
+.rov-svg .thruster.active text, .rov-svg .thruster.failed text { fill: #fff; }
+.rov-svg .thruster.active .pulse { stroke: var(--tether); stroke-width: 5; animation: pulse 1s ease-in-out infinite; }
+.rov-svg .thruster.failed rect, .rov-svg .thruster.failed circle:not(.pulse) { fill: var(--fail); stroke: #b3121a; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
+
+.boat-top { position: relative; width: 100%; }
+.boat-top img { width: 100%; display: block; }
+.boat-labels.boat-bow { justify-content: center; margin: 0 0 4px; }
+.boat-top .boat-img-wrap { position: relative; }
+.boat-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+.boat-overlay .hull rect, .boat-overlay .hull circle { fill: none; stroke: none; }
+.boat-overlay .hull.active rect { fill: rgba(254, 221, 0, .28); stroke: var(--tether); stroke-width: 10; }
+.boat-overlay .hull.active circle { fill: none; stroke: var(--tether); stroke-width: 14; animation: pulse 1s ease-in-out infinite; }
+.boat-overlay .hull.failed rect { fill: rgba(255, 29, 37, .25); stroke: var(--fail); stroke-width: 10; }
+.boat-overlay .hull.failed circle { fill: none; stroke: var(--fail); stroke-width: 14; }
+.boat-labels { display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; color: var(--tuna); letter-spacing: .8px; margin-top: 4px; }
+
+.troubleshoot-card { border-color: var(--fail) !important; }
+.troubleshoot-list li { margin-bottom: 6px; }

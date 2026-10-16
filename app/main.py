@@ -21,7 +21,7 @@ from restore_state import RestoreJournal
 from tests_runner import Runner
 from vehicle import Detector, calibration
 
-EXTENSION_VERSION = "1.0.0"     # keep in sync with the Dockerfile `version` label
+EXTENSION_VERSION = "1.1.0"     # keep in sync with the Dockerfile `version` label
 PORT = int(os.environ.get("SELFTEST_PORT", "9450"))
 LOG_DIR = os.environ.get("SELFTEST_LOG_DIR", "/app/logs")
 SIM = os.environ.get("SELFTEST_SIM", "").strip().lower()
@@ -381,11 +381,36 @@ def api_motors_end():
     return jsonify({"ok": True})
 
 
+@app.route("/api/motors/review", methods=["POST"])
+def api_motors_review():
+    """End-of-sequence thruster review: the tester gets a second chance to
+    report thrusters that did not work, without re-running them."""
+    body = request.get_json(silent=True) or {}
+    reported = set(body.get("failed_ids") or [])
+    motors = [t for t in (app_state["vehicle"] or {}).get("tests", []) if t["category"] == "motor"]
+    changed = []
+    for t in motors:
+        prev = app_state["results"].get(t["id"])
+        if t["id"] in reported and not (prev and prev["result"] == "FAIL"):
+            record_result({"id": t["id"], "name": t["name"], "channel": t["channel"],
+                           "category": "motor", "function": t["function"], "result": "FAIL",
+                           "fail_at_s": None, "error": "Reported not working at end-of-sequence review",
+                           "param_changes": [], "time": time.strftime("%H:%M:%S")})
+            changed.append(t["name"])
+    failed = [t["name"] for t in motors
+              if (app_state["results"].get(t["id"]) or {}).get("result") == "FAIL"]
+    log_event("Thruster review: " + (f"not working: {', '.join(failed)}" if failed
+                                     else "all thrusters confirmed working"))
+    return jsonify({"ok": True, "failed": failed, "newly_reported": changed})
+
+
 @app.route("/api/settings", methods=["POST"])
 def api_settings():
     body = request.get_json(silent=True) or {}
     if "motor_offset" in body:
         runner.settings["motor_offset"] = max(25, min(300, int(body["motor_offset"])))
+    if "motor_duration_s" in body:
+        runner.settings["motor_duration_s"] = max(1.0, min(20.0, float(body["motor_duration_s"])))
     if "duration_s" in body:
         runner.settings["duration_s"] = max(2.0, min(20.0, float(body["duration_s"])))
     return jsonify({"ok": True, "settings": runner.settings})

@@ -36,23 +36,37 @@ wizard the log folder opens in the BlueOS File Browser.
    *Power* page does. Before you can apply, the page warns if a value would be more than
    10 % from the vehicle's default (BlueOS Parameter Repository) or if the pack voltage is
    outside 12.0–16.8 V.
-5. **Hardware tests.** Each output is exercised for 5 seconds while you watch.
+5. **Hardware tests.** Each output is exercised while you watch.
    - **Press SPACE** (or the red button) if the expected behaviour is *not* happening. This
      records a FAIL immediately, stops the output, and offers Retry / Continue plus a
      troubleshooting-guide link (`TROUBLESHOOTING_URLS` in `app/main.py`).
-   - **Motors** run one at a time at ±100 µs from neutral, using `MOT_n_DIRECTION`.
+   - **Motors** run one at a time for 3 s at ±200 µs from neutral, using `MOT_n_DIRECTION`.
+     A top-view diagram highlights the thruster being tested: the BlueROV2 / Heavy frame
+     layout, or the port/starboard hull on the BlueBoat.
      - ArduSub only accepts motor tests while armed. The extension switches to MANUAL,
        arms, and streams `MAV_CMD_DO_MOTOR_TEST` at 10 Hz, as the BlueOS PWM page does.
        It disarms and restores the previous mode when the motor tests end.
-     - On a BlueBoat, a stern-view graphic shows the correct rotation: blades moving
+     - On a BlueBoat, a stern-view graphic also shows the correct rotation: blades moving
        **up in the middle**.
-   - **Lights, gripper/actuators, focus and zoom.** The output's `SERVOn_FUNCTION` is set to 0
-     for the test, because `DO_SET_SERVO` is rejected on assigned outputs. The output is swept
-     MIN→MAX→MIN, parked, and the original function is restored.
-   - **Camera tilt.** If the mount is stabilised (`MNT1_TYPE=1`), it is switched to
-     `MNT1_TYPE=7` (same servo, no stabilisation) and the autopilot is rebooted. The tilt is
-     then swept through `MNT1_PITCH_MIN…MAX`, `MNT1_TYPE=1` is restored, and the autopilot is
-     rebooted again. If the mount was not stabilised, there are no reboots.
+     - After the last thruster, a **thruster check** gives the tester a second chance to
+       report any thruster that didn't work. Thrusters reported here are logged as FAIL,
+       and troubleshooting steps are shown.
+   - **Lights, gripper/actuators, focus, zoom and camera tilt.** The output's
+     `SERVOn_FUNCTION` is set to 0 for the test, because `DO_SET_SERVO` is rejected on
+     assigned outputs. The output is driven with `DO_SET_SERVO`, then parked, and the
+     original function is restored.
+     - Lights: off → ramp to full → hold → ramp down → off (5 s).
+     - Gripper: held at `SERVOn_MAX` for 4 s, then `SERVOn_MIN` for 4 s, so a
+       speed-controlled gripper reaches both end stops.
+     - Camera tilt (channel 16), focus and zoom: trim → max → min → trim (5 s).
+     - Each test checks `SERVO_OUTPUT_RAW`. If the autopilot output didn't follow the
+       command, the test is reported as ERROR even if nobody pressed Space.
+     - Autopilot STATUSTEXT messages during a test are copied into the log.
+   - **Camera tilt stabilization.** Only if the mount is stabilised (`MNT1_TYPE=1`) is it
+     switched to `MNT1_TYPE=7` and the autopilot rebooted. This lets the full range be
+     tested whatever the vehicle's orientation. Afterwards `MNT1_TYPE=1` is restored and
+     the autopilot is rebooted again. If stabilization is off, nothing is changed and
+     there are no reboots.
 6. **Finish.** Shows a summary, the log file names, and an embedded BlueOS File Browser at
    `extensions/selftest`.
 
