@@ -296,16 +296,14 @@ new Vue({
     },
     motorTroubleshooting () {
       const tips = [
+        'With power off, spin the propeller by hand. It should turn freely with no grinding; clear any debris or hair.',
         'Check the thruster\'s ESC signal cable is plugged into the correct autopilot output, with signal and ground the right way round.',
         'Listen for the ESC start-up beeps when the battery is connected; no beeps means the ESC has no power (check the power distribution and connectors).',
-        'With power off, spin the propeller by hand. It should turn freely with no grinding; clear any debris or hair.',
         'Check the three thruster wires to the ESC (or penetrator connection) for damage or loose joints.',
         'Swap the signal cable with a working thruster\'s output: if the fault moves, it is the autopilot output or cable; if it stays, it is the ESC or thruster.'
       ]
       if (this.isBoat) {
         tips.splice(3, 0, 'If it spins the wrong way, swap any two of the three thruster wires and check the correct-handed propeller is fitted.')
-      } else {
-        tips.push('If a thruster pushes the wrong way, change its MOT_n_DIRECTION parameter in BlueOS Vehicle Setup → PWM Outputs.')
       }
       return tips
     },

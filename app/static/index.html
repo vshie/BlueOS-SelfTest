@@ -358,6 +358,11 @@
                     <ol class="troubleshoot-list">
                       <li v-for="(tip, i) in motorTroubleshooting" :key="'tip' + i">{{ tip }}</li>
                     </ol>
+                    <div v-if="!isBoat" class="mt-2">
+                      <strong>Note:</strong> once a thruster spins, it must also be configured to push in the correct
+                      direction for normal operation. Set this manually with its <code>MOT_n_DIRECTION</code> parameter
+                      (BlueOS Vehicle Setup → PWM Outputs), or run the motor direction test with the vehicle floating in water.
+                    </div>
                     <div class="mt-2">
                       <a v-if="status && status.troubleshooting.motor" :href="status.troubleshooting.motor" target="_blank" rel="noopener">
                         <v-icon small color="primary">mdi-book-open-variant</v-icon> Full thruster troubleshooting guide</a>
