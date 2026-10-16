@@ -88,6 +88,15 @@ short line test:
 - **Order:** each of the 4K camera's three actuators (focus, zoom, tilt) is tested on its own,
   with the one being tested shown as "Now testing".
 - **Live video:** the preview is shown for all camera tests.
+- **4K camera PWM limits:** when the 4K camera is found, the Vehicle step shows the autopilot's
+  `SERVOn_MIN / TRIM / MAX` for the focus, zoom and tilt outputs.
+  - If the [4K Cam Manager](https://github.com/bluerobotics/br4kcam-manager) extension is
+    installed (found through BlueOS's helper service list), these are compared with the values
+    it saved. The comparison uses its `/v1/health` `parameter_drifts` list, and any mismatch is
+    flagged with a prompt to re-apply the configuration there.
+  - Focus or zoom still at the ArduPilot defaults (1100/1500/1900) is flagged as not saved.
+- **Live PWM:** during every servo test, a gauge shows the channel's actual output
+  (`SERVO_OUTPUT_RAW`) live against its MIN / TRIM / MAX.
 - **Logging and persistence:** the mode, and whether the 4K camera was found, are written to
   the log header. The switch state is remembered in the browser.
 

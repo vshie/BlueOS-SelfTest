@@ -121,9 +121,24 @@ kbd {
 .live-video video.hidden { visibility: hidden; }
 .live-status { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 10px; font-size: 13px;
   color: #fff; background: rgba(1, 47, 70, .75); }
-.live-status.error { background: rgba(1, 47, 70, .9); }
+.live-status.is-error { background: rgba(1, 47, 70, .9); }
 .live-status .v-icon { color: #fff !important; }
 
 .production-switch { flex: 0 0 auto; }
 .production-switch .v-label { font-size: 14px; color: var(--oyster) !important; }
 .now-testing { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--tuna); }
+
+/* live PWM gauge */
+.pwm-gauge { padding: 8px 0 22px; }
+.pwm-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.pwm-live { font-size: 30px; font-weight: 300; color: var(--mariner); }
+.pwm-live small { font-size: 15px; color: var(--oyster); }
+.pwm-caption { font-size: 13px; color: var(--tuna); }
+.pwm-track { position: relative; height: 14px; background: #eef0f2; border-radius: 7px; }
+.pwm-range { position: absolute; top: 0; bottom: 0; background: rgba(38, 153, 208, .25); border-radius: 7px; }
+.pwm-tick { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--tuna); }
+.pwm-tick.trim { background: var(--oyster); }
+.pwm-needle { position: absolute; top: -6px; width: 6px; height: 26px; margin-left: -3px; border-radius: 3px;
+  background: var(--mariner); transition: left .2s linear; }
+.pwm-labels { position: relative; height: 16px; font-size: 11px; color: var(--tuna); }
+.pwm-labels span { position: absolute; transform: translateX(-50%); top: 4px; white-space: nowrap; }

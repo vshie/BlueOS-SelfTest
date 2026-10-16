@@ -110,6 +110,19 @@ class RunLog:
             self._append("\n".join(lines) + "\n")
             self._flush_json()
 
+    def camera_params(self, result: dict) -> None:
+        with self._lock:
+            self.data["camera_params"] = result
+            lines = ["--- 4K camera PWM limits (autopilot) ---", f"  {result.get('source')}"]
+            for r in result.get("rows") or []:
+                lines.append(f"  [{r['result']:<4}] {r['name']:<13} SERVO{r['channel']:<2} "
+                             f"MIN {r['min']}  TRIM {r['trim']}  MAX {r['max']}"
+                             + (f"  - {'; '.join(r['issues'])}" if r["issues"] else ""))
+            for d in result.get("other_drifts") or []:
+                lines.append(f"  [DRIFT] {d.get('name')} is {d.get('actual')}, saved {d.get('expected')}")
+            self._append("\n".join(lines) + "\n")
+            self._flush_json()
+
     def versions(self, result: dict) -> None:
         with self._lock:
             self.data["versions"] = result

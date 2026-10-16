@@ -109,6 +109,36 @@
                   tilt is tested.</span>
               </v-alert>
 
+              <v-card v-if="vehicle && cameraParams" outlined class="pa-4 mt-4">
+                <div class="d-flex align-center mb-1">
+                  <div class="overline">4K camera PWM limits saved in the autopilot</div>
+                  <v-spacer></v-spacer>
+                  <result-chip :result="cameraParams.result"></result-chip>
+                </div>
+                <v-simple-table dense>
+                  <thead><tr><th>Actuator</th><th>Output</th><th>MIN</th><th>TRIM</th><th>MAX</th><th>Status</th></tr></thead>
+                  <tbody>
+                    <tr v-for="r in cameraParams.rows" :key="'cp' + r.channel">
+                      <td class="font-weight-medium">{{ r.name }}</td><td>SERVO{{ r.channel }}</td>
+                      <td>{{ dash(r.min) }}</td><td>{{ dash(r.trim) }}</td><td>{{ dash(r.max) }}</td>
+                      <td>
+                        <result-chip :result="r.result"></result-chip>
+                        <span v-if="r.issues.length" class="error--text ml-2">{{ r.issues.join('; ') }}</span>
+                      </td>
+                    </tr>
+                    <tr v-for="d in cameraParams.other_drifts" :key="'od' + d.name">
+                      <td colspan="5"><code>{{ d.name }}</code> is {{ d.actual }}, 4K Cam Manager saved {{ d.expected }}</td>
+                      <td><result-chip result="FAIL"></result-chip></td>
+                    </tr>
+                  </tbody>
+                </v-simple-table>
+                <div class="grey--text text-caption mt-2">{{ cameraParams.source }}</div>
+                <v-alert v-if="cameraParams.result === 'FAIL'" type="error" text dense class="mt-2 mb-0">
+                  The 4K camera's PWM limits in the autopilot don't match its saved setup. Re-apply the configuration
+                  in the 4K Cam Manager extension before testing.
+                </v-alert>
+              </v-card>
+
               <v-card v-if="vehicle && versions" outlined class="pa-4 mt-4">
                 <div class="overline mb-1">Software versions</div>
                 <v-simple-table dense>
@@ -138,7 +168,9 @@
                 </v-row>
                 <v-checkbox v-model="safetyConfirmed" color="primary" hide-details class="mt-4">
                   <template #label>
-                    <span>The vehicle is secured, propellers and gripper are clear of people and objects,
+                    <span v-if="productionMode">The vehicle is secured and nobody is piloting it. The camera tilt,
+                      focus and zoom will move, and the autopilot may reboot.</span>
+                    <span v-else>The vehicle is secured, propellers and gripper are clear of people and objects,
                       and nobody is piloting it. Thrusters will spin at low power.</span>
                   </template>
                 </v-checkbox>
@@ -446,10 +478,13 @@
                       </div>
                       <v-progress-linear :value="testProgress" height="14" rounded color="secondary" class="my-4"></v-progress-linear>
                       <div class="d-flex align-center">
-                        <span class="text-h6 font-weight-light">{{ testState.value_label }}</span>
+                        <span v-if="currentTest.category === 'motor'" class="text-h6 font-weight-light">{{ testState.value_label }}</span>
                         <v-spacer></v-spacer>
                         <span class="grey--text">{{ (testState.duration - testState.elapsed).toFixed(1) }} s</span>
                       </div>
+                      <pwm-gauge v-if="currentTest.category !== 'motor'" class="mt-2"
+                                 :min="currentTest.pwm_min" :trim="currentTest.pwm_trim" :max="currentTest.pwm_max"
+                                 :output="testState.output_pwm" :commanded="testState.pwm"></pwm-gauge>
                       <v-btn block x-large color="error" depressed class="mt-4" @click="flagFail">
                         <v-icon left>mdi-close-octagon</v-icon>Not working (Space)
                       </v-btn>

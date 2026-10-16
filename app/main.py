@@ -23,7 +23,7 @@ from restore_state import RestoreJournal
 from tests_runner import Runner
 from vehicle import Detector, calibration
 
-EXTENSION_VERSION = "1.5.0"     # keep in sync with the Dockerfile `version` label
+EXTENSION_VERSION = "1.6.0"     # keep in sync with the Dockerfile `version` label
 PORT = int(os.environ.get("SELFTEST_PORT", "9450"))
 LOG_DIR = os.environ.get("SELFTEST_LOG_DIR", "/app/logs")
 SIM = os.environ.get("SELFTEST_SIM", "").strip().lower()
@@ -63,6 +63,7 @@ app_state = {
     "results": {},        # test_id -> latest result
     "versions": None,     # firmware / BlueOS version check
     "camera4k": None,     # 4K camera probe at 192.168.2.10
+    "camera_params": None,  # 4K camera SERVO limits vs 4K Cam Manager
 }
 
 
@@ -123,6 +124,14 @@ def run_detection() -> None:
         progress("Looking for the 4K camera", 0.985)
         app_state["camera4k"] = ({"ip": devices.CAMERA_4K_IP, "detected": SIM_4K, "open_ports": [], "ping": SIM_4K}
                                  if SIM else devices.probe_4k_camera())
+        app_state["camera_params"] = None
+        if (app_state["camera4k"] or {}).get("detected"):
+            progress("Checking 4K camera PWM limits", 0.987)
+            try:
+                app_state["camera_params"] = (sim_camera_params(vehicle) if SIM
+                                              else devices.check_4k_cam_params(client, vehicle))
+            except Exception as e:  # noqa: BLE001
+                logger.error("4K camera parameter check failed: %s", e)
         progress("Checking firmware and BlueOS versions", 0.99)
         try:
             app_state["versions"] = versions.check_versions(client, vehicle)
@@ -133,6 +142,14 @@ def run_detection() -> None:
     except Exception as e:  # noqa: BLE001
         logger.error("Detection failed: %s", e)
         app_state["detect"].update(status="error", error=str(e))
+
+
+def sim_camera_params(vehicle: dict) -> dict:
+    rows = [{"name": t["name"], "category": t["category"], "channel": t["channel"], "function": t["function"],
+             "min": t["pwm_min"], "trim": t["pwm_trim"], "max": t["pwm_max"], "issues": [], "result": "PASS"}
+            for t in vehicle.get("tests", []) if t["category"] in ("focus", "zoom", "tilt")]
+    return {"result": "PASS", "rows": rows, "source": "Simulated 4K Cam Manager", "manager_port": None,
+            "other_drifts": []}
 
 
 def blueos_meta() -> dict:
@@ -188,6 +205,7 @@ def api_status():
         "results": app_state["results"],
         "versions": app_state["versions"],
         "camera4k": app_state["camera4k"],
+        "camera_params": app_state["camera_params"],
         "restore_pending": journal.pending(),
         "troubleshooting": TROUBLESHOOTING_URLS,
         "settings": runner.settings,
@@ -243,6 +261,11 @@ def api_session_start():
     app_state["results"] = {}
     app_state["run"] = RunLog(LOG_DIR, vehicle, meta)
     app_state["run"].event("Session started")
+    if app_state["camera_params"]:
+        app_state["run"].camera_params(app_state["camera_params"])
+        app_state["results"]["camera_params"] = {
+            "id": "camera_params", "result": app_state["camera_params"]["result"],
+            "summary": app_state["camera_params"]["source"]}
     if app_state["versions"]:
         app_state["run"].versions(app_state["versions"])
         app_state["results"]["versions"] = {"id": "versions", "result": app_state["versions"]["result"],
@@ -486,7 +509,7 @@ def api_session_finish():
     run = current_log()
     if not run:
         return jsonify({"ok": False, "error": "No session"}), 400
-    tests = [r for k, r in app_state["results"].items() if k not in ("network", "power", "devices", "versions")]
+    tests = [r for k, r in app_state["results"].items() if k not in ("network", "power", "devices", "versions", "camera_params")]
     summary = {
         "passed": sum(r["result"] == "PASS" for r in tests),
         "failed": sum(r["result"] == "FAIL" for r in tests),

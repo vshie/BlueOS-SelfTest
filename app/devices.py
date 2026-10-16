@@ -302,6 +302,79 @@ def probe_4k_camera(ip: str = CAMERA_4K_IP) -> dict:
     return {"ip": ip, "detected": bool(ports or pingable), "open_ports": ports, "ping": pingable}
 
 
+ARDUPILOT_DEFAULT_PWM = (1100, 1500, 1900)
+
+
+def find_4k_cam_manager() -> Optional[int]:
+    """Port of the 4K Cam Manager extension (bluerobotics/br4kcam-manager), if installed."""
+    services = blueos_json("/helper/v1.0/web_services", timeout=20) or []
+    for s in services if isinstance(services, list) else []:
+        meta = s.get("metadata") or {}
+        text = " ".join(str(x or "") for x in (meta.get("name"), meta.get("sanitized_name"), s.get("title"))).lower()
+        if "4k cam" in text or "br4kcam" in text or "4kcam" in text:
+            return s.get("port")
+    return None
+
+
+def check_4k_cam_params(client: MavlinkClient, vehicle: dict) -> dict:
+    """Are the 4K camera's focus/zoom/tilt PWM limits saved in the autopilot?
+
+    Shows the autopilot's SERVOn_MIN/TRIM/MAX for each camera channel and,
+    when the 4K Cam Manager extension is installed, compares them with the
+    values it saved (its /v1/health parameter_drifts list)."""
+    rows = []
+    for t in vehicle.get("tests") or []:
+        if t["category"] not in ("focus", "zoom", "tilt"):
+            continue
+        ch = t["channel"]
+        values = {k: client.param_get(f"SERVO{ch}_{k}") for k in ("MIN", "TRIM", "MAX")}
+        rows.append({"name": t["name"], "category": t["category"], "channel": ch,
+                     "function": t["function"], **{k.lower(): (None if v is None else int(v))
+                                                   for k, v in values.items()},
+                     "issues": []})
+
+    manager_port = find_4k_cam_manager()
+    drifts = None
+    manager_error = None
+    if manager_port:
+        try:
+            health = requests.get(f"{BLUEOS}:{manager_port}/v1/health", timeout=5).json()
+            drifts = health.get("parameter_drifts") or []
+        except Exception as e:  # noqa: BLE001
+            manager_error = str(e)
+
+    for r in rows:
+        lo, trim, hi = r["min"], r["trim"], r["max"]
+        if None in (lo, trim, hi):
+            r["issues"].append("could not read SERVO limits")
+        else:
+            if not lo < hi:
+                r["issues"].append("MIN is not below MAX")
+            elif not lo <= trim <= hi:
+                r["issues"].append("TRIM is outside MIN–MAX")
+            if (lo, trim, hi) == ARDUPILOT_DEFAULT_PWM and r["category"] in ("focus", "zoom"):
+                r["issues"].append("still at ArduPilot defaults (1100/1500/1900): 4K camera limits not saved?")
+        if drifts:
+            prefix = f"SERVO{r['channel']}_"
+            for d in drifts:
+                if str(d.get("name", "")).startswith(prefix):
+                    r["issues"].append(f"{d['name']} is {d.get('actual'):g}, 4K Cam Manager saved {d.get('expected'):g}")
+        r["result"] = "FAIL" if r["issues"] else "PASS"
+
+    other_drifts = [d for d in (drifts or []) if not any(
+        str(d.get("name", "")).startswith(f"SERVO{r['channel']}_") for r in rows)]
+    if manager_port and drifts is not None:
+        source = f"Compared with 4K Cam Manager (port {manager_port})"
+    elif manager_port:
+        source = f"4K Cam Manager found on port {manager_port} but not readable: {manager_error}"
+    else:
+        source = "4K Cam Manager extension not found; showing autopilot values only"
+    result = "FAIL" if any(r["result"] == "FAIL" for r in rows) or other_drifts else \
+        ("PASS" if drifts is not None else "WARN")
+    return {"result": result, "rows": rows, "source": source, "manager_port": manager_port,
+            "other_drifts": other_drifts}
+
+
 # ---------------------------------------------------------------------------
 # Autopilot rangefinder check
 # ---------------------------------------------------------------------------

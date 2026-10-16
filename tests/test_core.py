@@ -157,3 +157,19 @@ def test_version_checks():
     assert out["checks"][0]["result"] == "PASS" and "built-in" in out["checks"][0]["detail"]
     assert out["checks"][1]["result"] == "WARN"           # BlueOS version unknown
     assert versions.parse_version("1.5.0-beta.2") == (1, 5, 0)
+
+
+def test_4k_cam_param_check(monkeypatch):
+    sim = SimClient("bluerov2")
+    vehicle = Detector(sim).run()
+    monkeypatch.setattr(devices, "find_4k_cam_manager", lambda: None)
+    out = devices.check_4k_cam_params(sim, vehicle)
+    rows = {r["category"]: r for r in out["rows"]}
+    assert set(rows) == {"focus", "zoom", "tilt"}
+    # focus/zoom left at ArduPilot defaults are flagged as not saved
+    assert rows["focus"]["result"] == "FAIL" and "defaults" in rows["focus"]["issues"][0]
+    assert rows["tilt"]["result"] == "PASS"
+    sim.params.update({"SERVO11_MIN": 870, "SERVO11_TRIM": 1639, "SERVO11_MAX": 2130,
+                       "SERVO12_MIN": 1000, "SERVO12_TRIM": 1500, "SERVO12_MAX": 2000})
+    out = devices.check_4k_cam_params(sim, vehicle)
+    assert out["result"] == "WARN"          # values fine, but no 4K Cam Manager to compare with

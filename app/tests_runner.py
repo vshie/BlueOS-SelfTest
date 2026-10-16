@@ -127,7 +127,8 @@ class Runner:
         return {"test_id": None, "phase": "idle", "message": "", "elapsed": 0.0,
                 "duration": TEST_DURATION_S, "result": None, "fail_at_s": None,
                 "error": None, "pwm": None, "value_label": None,
-                "sweep_result": None}   # known as soon as the sweep ends, before restore
+                "sweep_result": None,
+                "output_pwm": None}     # live SERVO_OUTPUT_RAW value for the channel under test   # known as soon as the sweep ends, before restore
 
     def _set(self, **kw) -> None:
         with self._lock:
@@ -396,6 +397,7 @@ class Runner:
             raw, _ = self.client.message("SERVO_OUTPUT_RAW")
             if raw and raw.get(f"servo{ch}_raw"):
                 observed.append(int(raw[f"servo{ch}_raw"]))
+                self._set(output_pwm=observed[-1])
 
         fail_at = self._sweep_loop(step)
         if observed:

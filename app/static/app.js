@@ -261,8 +261,40 @@ Vue.component('live-video', {
   template: `
     <div class="live-video">
       <video ref="video" muted autoplay playsinline :class="{ hidden: !playing }"></video>
-      <div v-if="!playing || status" class="live-status" :class="{ error }">
+      <div v-if="!playing || status" class="live-status" :class="{ 'is-error': error }">
         <v-icon small class="mr-1" :color="error ? 'error' : 'grey'">mdi-video</v-icon>{{ status || 'Live video' }}
+      </div>
+    </div>`
+})
+
+// Live PWM on the channel under test: the autopilot's actual output
+// (SERVO_OUTPUT_RAW) against the SERVOn_MIN / TRIM / MAX saved in the autopilot.
+Vue.component('pwm-gauge', {
+  props: { min: Number, trim: Number, max: Number, output: Number, commanded: Number },
+  computed: {
+    lo () { return Math.min(this.min, 1000) },
+    hi () { return Math.max(this.max, 2000) }
+  },
+  methods: {
+    pos (v) { return (100 * (v - this.lo) / (this.hi - this.lo)).toFixed(2) + '%' }
+  },
+  template: `
+    <div class="pwm-gauge">
+      <div class="pwm-head">
+        <span class="pwm-live">{{ output != null ? output : '—' }}<small> µs</small></span>
+        <span class="pwm-caption">live output<span v-if="commanded != null"> · commanded {{ commanded }} µs</span></span>
+      </div>
+      <div class="pwm-track">
+        <div class="pwm-range" :style="{ left: pos(min), width: 'calc(' + pos(max) + ' - ' + pos(min) + ')' }"></div>
+        <div class="pwm-tick" :style="{ left: pos(min) }"></div>
+        <div class="pwm-tick trim" :style="{ left: pos(trim) }"></div>
+        <div class="pwm-tick" :style="{ left: pos(max) }"></div>
+        <div v-if="output != null" class="pwm-needle" :style="{ left: pos(Math.min(Math.max(output, lo), hi)) }"></div>
+      </div>
+      <div class="pwm-labels">
+        <span :style="{ left: pos(min) }">MIN {{ min }}</span>
+        <span :style="{ left: pos(trim) }">TRIM {{ trim }}</span>
+        <span :style="{ left: pos(max) }">MAX {{ max }}</span>
       </div>
     </div>`
 })
@@ -388,6 +420,7 @@ new Vue({
       return { 73: 'left', 74: 'right' }[this.currentTest.function] || null
     },
     versions () { return this.status && this.status.versions },
+    cameraParams () { return this.status && this.status.camera_params },
     frameKind () {
       if (!this.vehicle) return null
       if (this.isBoat) return 'boat'
@@ -422,6 +455,7 @@ new Vue({
     summaryRows () {
       const rows = []
       const r = this.results
+      if (r.camera_params) rows.push({ name: '4K camera PWM limits', result: r.camera_params.result, detail: r.camera_params.summary || '' })
       if (r.versions) rows.push({ name: 'Software versions', result: r.versions.result, detail: r.versions.summary || '' })
       if (r.network) rows.push({ name: 'Network (browser ↔ vehicle)', result: r.network.result, detail: this.netDetail(r.network) })
       if (r.devices) rows.push({ name: 'Network devices & sonars', result: r.devices.result, detail: r.devices.summary || '' })
