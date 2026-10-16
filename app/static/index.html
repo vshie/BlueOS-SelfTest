@@ -111,7 +111,7 @@
 
               <v-card v-if="vehicle && cameraParams" outlined class="pa-4 mt-4">
                 <div class="d-flex align-center mb-1">
-                  <div class="overline">4K camera PWM limits saved in the autopilot</div>
+                  <div class="overline">Camera PWM limits saved in the autopilot</div>
                   <v-spacer></v-spacer>
                   <result-chip :result="cameraParams.result"></result-chip>
                 </div>
@@ -134,8 +134,11 @@
                 </v-simple-table>
                 <div class="grey--text text-caption mt-2">{{ cameraParams.source }}</div>
                 <v-alert v-if="cameraParams.result === 'FAIL'" type="error" text dense class="mt-2 mb-0">
-                  The 4K camera's PWM limits in the autopilot don't match its saved setup. Re-apply the configuration
-                  in the 4K Cam Manager extension before testing.
+                  <template v-if="cameraParams.manager_port || cameraParams.rows.some(r => r.category !== 'tilt')">
+                    The 4K camera's PWM limits in the autopilot don't match its saved setup. Re-apply the configuration
+                    in the 4K Cam Manager extension before testing.</template>
+                  <template v-else>The camera PWM limits in the autopilot look wrong; check SERVO MIN / TRIM / MAX in
+                    BlueOS Vehicle Setup → PWM Outputs.</template>
                 </v-alert>
               </v-card>
 

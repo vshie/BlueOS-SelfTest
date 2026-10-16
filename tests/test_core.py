@@ -173,3 +173,12 @@ def test_4k_cam_param_check(monkeypatch):
                        "SERVO12_MIN": 1000, "SERVO12_TRIM": 1500, "SERVO12_MAX": 2000})
     out = devices.check_4k_cam_params(sim, vehicle)
     assert out["result"] == "WARN"          # values fine, but no 4K Cam Manager to compare with
+
+
+def test_camera_param_check_tilt_only(monkeypatch):
+    sim = SimClient("bluerov2")
+    vehicle = {"tests": [{"name": "Camera Tilt", "category": "tilt", "channel": 16, "function": 7}]}
+    monkeypatch.setattr(devices, "find_4k_cam_manager", lambda: None)
+    out = devices.check_4k_cam_params(sim, vehicle)
+    assert out["result"] == "PASS" and out["rows"][0]["max"] == 1900
+    assert "no 4K camera" in out["source"]

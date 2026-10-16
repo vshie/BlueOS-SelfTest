@@ -367,10 +367,13 @@ def check_4k_cam_params(client: MavlinkClient, vehicle: dict) -> dict:
         source = f"Compared with 4K Cam Manager (port {manager_port})"
     elif manager_port:
         source = f"4K Cam Manager found on port {manager_port} but not readable: {manager_error}"
-    else:
+    elif any(r["category"] in ("focus", "zoom") for r in rows):
         source = "4K Cam Manager extension not found; showing autopilot values only"
+    else:
+        source = "Autopilot values (no 4K camera setup to compare with)"
+    has_4k_outputs = any(r["category"] in ("focus", "zoom") for r in rows)
     result = "FAIL" if any(r["result"] == "FAIL" for r in rows) or other_drifts else \
-        ("PASS" if drifts is not None else "WARN")
+        ("WARN" if has_4k_outputs and drifts is None else "PASS")
     return {"result": result, "rows": rows, "source": source, "manager_port": manager_port,
             "other_drifts": other_drifts}
 

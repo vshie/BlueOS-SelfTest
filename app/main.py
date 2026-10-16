@@ -23,7 +23,7 @@ from restore_state import RestoreJournal
 from tests_runner import Runner
 from vehicle import Detector, calibration
 
-EXTENSION_VERSION = "1.6.0"     # keep in sync with the Dockerfile `version` label
+EXTENSION_VERSION = "1.6.1"     # keep in sync with the Dockerfile `version` label
 PORT = int(os.environ.get("SELFTEST_PORT", "9450"))
 LOG_DIR = os.environ.get("SELFTEST_LOG_DIR", "/app/logs")
 SIM = os.environ.get("SELFTEST_SIM", "").strip().lower()
@@ -125,8 +125,8 @@ def run_detection() -> None:
         app_state["camera4k"] = ({"ip": devices.CAMERA_4K_IP, "detected": SIM_4K, "open_ports": [], "ping": SIM_4K}
                                  if SIM else devices.probe_4k_camera())
         app_state["camera_params"] = None
-        if (app_state["camera4k"] or {}).get("detected"):
-            progress("Checking 4K camera PWM limits", 0.987)
+        if any(t["category"] in ("tilt", "focus", "zoom") for t in vehicle.get("tests", [])):
+            progress("Checking camera PWM limits", 0.987)
             try:
                 app_state["camera_params"] = (sim_camera_params(vehicle) if SIM
                                               else devices.check_4k_cam_params(client, vehicle))

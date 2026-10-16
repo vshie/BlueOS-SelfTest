@@ -455,7 +455,7 @@ new Vue({
     summaryRows () {
       const rows = []
       const r = this.results
-      if (r.camera_params) rows.push({ name: '4K camera PWM limits', result: r.camera_params.result, detail: r.camera_params.summary || '' })
+      if (r.camera_params) rows.push({ name: 'Camera PWM limits', result: r.camera_params.result, detail: r.camera_params.summary || '' })
       if (r.versions) rows.push({ name: 'Software versions', result: r.versions.result, detail: r.versions.summary || '' })
       if (r.network) rows.push({ name: 'Network (browser ↔ vehicle)', result: r.network.result, detail: this.netDetail(r.network) })
       if (r.devices) rows.push({ name: 'Network devices & sonars', result: r.devices.result, detail: r.devices.summary || '' })
