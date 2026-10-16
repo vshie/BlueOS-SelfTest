@@ -130,7 +130,7 @@ In BlueOS go to **Extensions → Installed → +** (manual install):
 |---|---|
 | Extension Identifier | `vshie.selftest` |
 | Extension Name | `Self Test` |
-| Docker image | `<dockerhub-user>/blueos-selftest` |
+| Docker image | `vshie/blueos-selftest` |
 | Docker tag | `main` (or a release tag) |
 
 Paste this into **Custom settings** (it's the same as the Dockerfile `permissions` label):
