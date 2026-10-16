@@ -115,7 +115,7 @@ short line test:
 
 ## Logs
 
-Each run creates `selftest_YYYYMMDD_HHMMSS_<vehicle-name>_<model>.log` (vehicle name from BlueOS Beacon) (human-readable) and a matching
+Each run creates `selftest_YYYYMMDD_HHMMSS_<vehicle-name>_<model>.log` (human-readable; the vehicle name comes from BlueOS Beacon) and a matching
 `.json` file in `/usr/blueos/extensions/selftest`. The log records:
 - Vehicle, firmware, BlueOS version, operator and serial number.
 - Network results.
