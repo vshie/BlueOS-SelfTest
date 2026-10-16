@@ -50,6 +50,8 @@ NEUTRAL_PWM = 1500
 DEFAULT_MOTOR_OFFSET = 200      # 1700 us: clearly visible spin without being violent
 MOTOR_TEST_DURATION_S = 3.0
 ACTUATOR_TEST_DURATION_S = 8.0  # 4 s each way so the gripper reaches both end stops
+TILT_TEST_DURATION_S = 10.0     # slow sweep with a pause at each end of travel
+TILT_END_HOLD_S = 1.0
 REBOOT_TIMEOUT_S = 120.0
 
 
@@ -81,7 +83,24 @@ def end_to_end(frac: float) -> float:
 
 
 SWEEP_PROFILES = {"lights": light_ramp, "actuator": end_to_end}
-CENTERED = ("tilt", "focus", "zoom")
+CENTERED = ("focus", "zoom")
+
+
+def tilt_sweep(frac: float, lo: int, trim: int, hi: int, hold_frac: float) -> int:
+    """trim -> max, hold, -> min, hold, -> trim. Ramps take 1:2:1 of the
+    time left after the two holds, so the tilt speed is constant."""
+    frac = min(max(frac, 0.0), 1.0)
+    unit = max(1e-6, (1.0 - 2.0 * hold_frac) / 4.0)
+    marks = [unit, unit + hold_frac, 3 * unit + hold_frac, 3 * unit + 2 * hold_frac]
+    if frac < marks[0]:
+        return int(round(trim + (hi - trim) * frac / unit))
+    if frac < marks[1]:
+        return hi
+    if frac < marks[2]:
+        return int(round(hi + (lo - hi) * (frac - marks[1]) / (2 * unit)))
+    if frac < marks[3]:
+        return lo
+    return int(round(lo + (trim - lo) * min(1.0, (frac - marks[3]) / unit)))
 
 
 def centered_sweep(frac: float, lo: int, trim: int, hi: int) -> int:
@@ -107,6 +126,7 @@ class Runner:
         self._vehicle: dict = {}
         self.settings = {"duration_s": TEST_DURATION_S, "motor_duration_s": MOTOR_TEST_DURATION_S,
                          "actuator_duration_s": ACTUATOR_TEST_DURATION_S,
+                         "tilt_duration_s": TILT_TEST_DURATION_S,
                          "motor_offset": DEFAULT_MOTOR_OFFSET}
 
         # motor session
@@ -172,7 +192,8 @@ class Runner:
         return None
 
     def duration_for(self, test: dict) -> float:
-        key = {"motor": "motor_duration_s", "actuator": "actuator_duration_s"}.get(test["kind"], "duration_s")
+        key = {"motor": "motor_duration_s", "actuator": "actuator_duration_s",
+               "tilt": "tilt_duration_s"}.get(test["kind"], "duration_s")
         return float(self.settings[key])
 
     def flag_fail(self) -> None:
@@ -388,7 +409,10 @@ class Runner:
         trim = min(max(test["pwm_trim"], lo), hi)
 
         def step(frac):
-            if test["category"] in CENTERED:
+            if test["category"] == "tilt":
+                hold = TILT_END_HOLD_S / max(self._state["duration"], 3 * TILT_END_HOLD_S)
+                pwm = tilt_sweep(frac, lo, trim, hi, hold)
+            elif test["category"] in CENTERED:
                 pwm = centered_sweep(frac, lo, trim, hi)
             else:
                 pwm = int(round(lo + (hi - lo) * profile(frac)))

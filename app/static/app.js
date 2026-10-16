@@ -683,7 +683,7 @@ new Vue({
     blueosPage (path) { return `${blueosRoot()}${path}` },
     testDuration (t) {
       const st = (this.status && this.status.settings) || {}
-      const key = { motor: 'motor_duration_s', actuator: 'actuator_duration_s' }[t.category] || 'duration_s'
+      const key = { motor: 'motor_duration_s', actuator: 'actuator_duration_s', tilt: 'tilt_duration_s' }[t.category] || 'duration_s'
       return st[key] || 5
     },
     motorKey (t) {

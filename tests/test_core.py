@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import devices  # noqa: E402
 from restore_state import RestoreJournal  # noqa: E402
 from sim import SimClient  # noqa: E402
-from tests_runner import Runner, centered_sweep, end_to_end, light_ramp, triangle  # noqa: E402
+from tests_runner import Runner, centered_sweep, end_to_end, light_ramp, tilt_sweep, triangle  # noqa: E402
 from vehicle import Detector, calibration, classify_output  # noqa: E402
 
 
@@ -63,6 +63,11 @@ def test_sweep_shapes():
     assert centered_sweep(0, 1100, 1500, 1900) == 1500
     assert centered_sweep(0.25, 1100, 1500, 1900) == 1900
     assert centered_sweep(0.75, 1100, 1500, 1900) == 1100
+    hold = 0.1   # 1 s of a 10 s test
+    assert tilt_sweep(0, 1100, 1500, 1900, hold) == 1500
+    assert tilt_sweep(0.21, 1100, 1500, 1900, hold) == 1900 == tilt_sweep(0.29, 1100, 1500, 1900, hold)
+    assert tilt_sweep(0.71, 1100, 1500, 1900, hold) == 1100 == tilt_sweep(0.79, 1100, 1500, 1900, hold)
+    assert tilt_sweep(1.0, 1100, 1500, 1900, hold) == 1500
     assert light_ramp(0.05) == 0 and light_ramp(0.5) == 1 and light_ramp(0.97) == 0
     assert end_to_end(0.2) == 1 and end_to_end(0.8) == 0
 
@@ -76,6 +81,7 @@ def make_runner(tmp_path, profile="bluerov2"):
     runner.settings["duration_s"] = 1.0
     runner.settings["motor_duration_s"] = 1.0
     runner.settings["actuator_duration_s"] = 1.0
+    runner.settings["tilt_duration_s"] = 1.0
     runner.set_vehicle(vehicle)
     return client, vehicle, journal, runner, results
 

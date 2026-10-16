@@ -65,7 +65,8 @@ wizard the log folder opens in the BlueOS File Browser.
      - Lights: off → ramp to full → hold → ramp down → off (5 s).
      - Gripper: held at `SERVOn_MAX` for 4 s, then `SERVOn_MIN` for 4 s, so a
        speed-controlled gripper reaches both end stops.
-     - Camera tilt (channel 16), focus and zoom: trim → max → min → trim (5 s).
+     - Camera tilt (channel 16): trim → max, hold 1 s → min, hold 1 s → trim (10 s).
+     - Focus and zoom: trim → max → min → trim (5 s).
      - Each test checks `SERVO_OUTPUT_RAW`. If the autopilot output didn't follow the
        command, the test is reported as ERROR even if nobody pressed Space.
      - Autopilot STATUSTEXT messages during a test are copied into the log.
