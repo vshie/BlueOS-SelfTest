@@ -400,7 +400,7 @@
                     <v-alert v-if="tiltNeedsReboot && testPhase === 'idle'" type="info" text class="mt-4 mb-0" icon="mdi-restart">
                       Camera stabilization is on, so this test <strong>reboots the autopilot twice</strong>: once to turn
                       stabilization off before the tilt sweep, and once to turn it back on afterwards. Each reboot takes
-                      roughly 15–60 seconds and the video and telemetry drop out briefly. You'll be told when to watch the camera.
+                      roughly 15–60 seconds and telemetry drops out briefly (video keeps running). You'll be told when to watch the camera.
                     </v-alert>
 
                     <div v-if="tiltNeedsReboot && busyTest" class="tilt-stages mt-4">
