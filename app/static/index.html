@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlueOS Self Test</title>
+  <link href="static/vendor/css/roboto.css" rel="stylesheet">
+  <link href="static/vendor/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="static/vendor/css/vuetify.min.css" rel="stylesheet">
+  <link href="static/style.css" rel="stylesheet">
+</head>
+<body>
+<div id="app"></div>
+
+<!-- The app template lives in an x-template so the browser's HTML parser
+     doesn't hoist <tr>/<td> out of the Vuetify table components. -->
+<script type="text/x-template" id="app-template">
+  <v-app>
+    <v-app-bar app flat color="white" height="72" class="br-appbar">
+      <img src="static/images/br-logo.png" alt="Blue Robotics" class="br-logo">
+      <v-divider vertical class="mx-4 my-5"></v-divider>
+      <div class="app-title">Self Test</div>
+      <v-spacer></v-spacer>
+      <v-chip v-if="status && status.sim" small color="accent" class="mr-2 font-weight-medium">SIMULATION</v-chip>
+      <v-chip small :color="status && status.connected ? 'success' : 'error'" text-color="white" class="mr-2">
+        <v-icon left small>{{ status && status.connected ? 'mdi-lan-connect' : 'mdi-lan-disconnect' }}</v-icon>
+        {{ status && status.connected ? 'Autopilot connected' : 'No autopilot' }}
+      </v-chip>
+      <v-chip v-if="vehicle" small outlined color="primary">{{ vehicle.model }}</v-chip>
+    </v-app-bar>
+
+    <v-main class="br-main">
+      <v-container class="py-6" style="max-width: 1100px">
+
+        <v-alert v-if="restorePending.length && !busyTest" type="warning" prominent class="mb-4">
+          <div class="d-flex align-center">
+            <div>Parameters changed by an interrupted test have not been restored yet:
+              <strong>{{ restorePending.join(', ') }}</strong></div>
+            <v-spacer></v-spacer>
+            <v-btn color="white" class="ml-4" outlined @click="restoreAll">Restore now</v-btn>
+          </div>
+        </v-alert>
+
+        <v-stepper v-model="step" class="elevation-0 br-stepper" alt-labels>
+          <v-stepper-header class="elevation-0">
+            <template v-for="(s, i) in steps">
+              <v-stepper-step :key="'s' + s.n" :step="s.n" :complete="step > s.n" color="primary">{{ s.title }}</v-stepper-step>
+              <v-divider v-if="i < steps.length - 1" :key="'d' + s.n"></v-divider>
+            </template>
+          </v-stepper-header>
+
+          <v-stepper-items>
+            <!-- 1. Vehicle --------------------------------------------------->
+            <v-stepper-content step="1">
+              <h2 class="step-title">Vehicle detection</h2>
+              <p class="step-sub">The autopilot is queried for vehicle type, frame and every PWM output function,
+                using the same mapping as BlueOS <em>Vehicle Setup → PWM Outputs</em>.</p>
+
+              <v-card outlined class="pa-4 mb-4" v-if="detecting || (status && status.detect.status === 'error')">
+                <div v-if="detecting">
+                  <div class="mb-2">{{ status.detect.message }}…</div>
+                  <v-progress-linear :value="100 * status.detect.progress" color="secondary" height="8" rounded></v-progress-linear>
+                </div>
+                <v-alert v-else type="error" text class="mb-0">{{ status.detect.error }}</v-alert>
+              </v-card>
+
+              <v-alert v-if="status && !status.connected" type="info" text>
+                Waiting for the autopilot heartbeat via mavlink2rest…
+              </v-alert>
+
+              <v-row v-if="vehicle">
+                <v-col cols="12" md="5">
+                  <v-card outlined class="pa-4 fill-height">
+                    <div class="overline">Vehicle</div>
+                    <div class="text-h5 font-weight-medium primary--text mb-2">{{ vehicle.model }}</div>
+                    <table class="kv">
+                      <tr><td>Firmware</td><td>{{ vehicle.firmware }} {{ vehicle.firmware_version || '' }}</td></tr>
+                      <tr><td>Frame</td><td>{{ vehicle.frame }}</td></tr>
+                      <tr><td>MAVLink system</td><td>{{ vehicle.system_id }}</td></tr>
+                      <tr><td>Battery</td><td>{{ telemetry.voltage != null ? telemetry.voltage.toFixed(2) + ' V' : '—' }}</td></tr>
+                      <tr><td>Armed</td><td>{{ telemetry.armed ? 'Yes' : 'No' }}</td></tr>
+                    </table>
+                  </v-card>
+                </v-col>
+                <v-col cols="12" md="7">
+                  <v-card outlined class="pa-4 fill-height">
+                    <div class="overline mb-2">Hardware to test ({{ tests.length }})</div>
+                    <v-simple-table dense>
+                      <thead><tr><th>Output</th><th>Function</th><th>Test</th></tr></thead>
+                      <tbody>
+                        <tr v-for="t in tests" :key="t.id">
+                          <td>SERVO{{ t.channel }}</td><td>{{ t.function }}</td><td>{{ t.name }}</td>
+                        </tr>
+                        <tr v-if="!tests.length"><td colspan="3" class="grey--text">No testable outputs found</td></tr>
+                      </tbody>
+                    </v-simple-table>
+                  </v-card>
+                </v-col>
+              </v-row>
+
+              <v-card v-if="vehicle" outlined class="pa-4 mt-4">
+                <v-row dense>
+                  <v-col cols="12" sm="4"><v-text-field v-model="form.operator" label="Operator" outlined dense hide-details></v-text-field></v-col>
+                  <v-col cols="12" sm="4"><v-text-field v-model="form.serial" label="Vehicle serial number" outlined dense hide-details></v-text-field></v-col>
+                  <v-col cols="12" sm="4"><v-text-field v-model="form.notes" label="Notes" outlined dense hide-details></v-text-field></v-col>
+                </v-row>
+                <v-checkbox v-model="safetyConfirmed" color="primary" hide-details class="mt-4">
+                  <template #label>
+                    <span>The vehicle is secured, propellers and gripper are clear of people and objects,
+                      and nobody is piloting it. Thrusters will spin at low power.</span>
+                  </template>
+                </v-checkbox>
+              </v-card>
+
+              <v-alert v-if="sessionError" type="error" text class="mt-4">{{ sessionError }}</v-alert>
+
+              <div class="actions">
+                <v-btn text color="primary" @click="detect" :disabled="detecting || !(status && status.connected)">
+                  <v-icon left>mdi-refresh</v-icon>Re-detect
+                </v-btn>
+                <v-spacer></v-spacer>
+                <v-btn color="primary" large depressed :disabled="!vehicle || !safetyConfirmed || detecting"
+                       :loading="sessionStarting" @click="startSession">
+                  Begin self test<v-icon right>mdi-arrow-right</v-icon>
+                </v-btn>
+              </div>
+            </v-stepper-content>
+
+            <!-- 2. Network ---------------------------------------------------->
+            <v-stepper-content step="2">
+              <h2 class="step-title">Network test</h2>
+              <p class="step-sub">Measures latency and throughput between <strong>this browser</strong> and the vehicle
+                over the tether, using BlueOS's built-in network test service.</p>
+
+              <v-card outlined class="pa-6 text-center">
+                <div v-if="net.running">
+                  <div class="text-h6 mb-1">{{ net.phase }}</div>
+                  <div class="text-h3 font-weight-light primary--text mb-4">{{ net.live || '…' }}</div>
+                  <v-progress-linear indeterminate color="secondary"></v-progress-linear>
+                </div>
+                <div v-else-if="net.result">
+                  <result-chip :result="net.result.verdict" class="mb-4"></result-chip>
+                  <v-row>
+                    <v-col cols="12" sm="4">
+                      <div class="metric-label">Latency (avg)</div>
+                      <div class="metric">{{ dash(net.result.latency.avg) }}<span> ms</span></div>
+                      <div class="metric-sub" v-if="net.result.latency.min != null">
+                        min {{ net.result.latency.min }} · max {{ net.result.latency.max }} · jitter {{ net.result.latency.jitter }}</div>
+                    </v-col>
+                    <v-col cols="12" sm="4">
+                      <div class="metric-label">Download</div>
+                      <div class="metric">{{ dash(net.result.download_mbps) }}<span> Mbps</span></div>
+                    </v-col>
+                    <v-col cols="12" sm="4">
+                      <div class="metric-label">Upload</div>
+                      <div class="metric">{{ dash(net.result.upload_mbps) }}<span> Mbps</span></div>
+                    </v-col>
+                  </v-row>
+                  <v-alert v-if="net.result.error" type="error" text class="mt-4 text-left">{{ net.result.error }}</v-alert>
+                </div>
+                <div v-else class="grey--text text--darken-1">Takes about 15 seconds.</div>
+              </v-card>
+
+              <div class="actions">
+                <v-btn text @click="step = 1" :disabled="net.running">Back</v-btn>
+                <v-spacer></v-spacer>
+                <v-btn outlined color="primary" class="mr-2" :disabled="net.running" @click="runNetwork">
+                  <v-icon left>mdi-speedometer</v-icon>{{ net.result ? 'Run again' : 'Run network test' }}
+                </v-btn>
+                <v-btn color="primary" depressed large :disabled="net.running" @click="step = 3">
+                  {{ net.result ? 'Next' : 'Skip' }}<v-icon right>mdi-arrow-right</v-icon>
+                </v-btn>
+              </div>
+            </v-stepper-content>
+
+            <!-- 3. Devices --------------------------------------------------->
+            <v-stepper-content step="3">
+              <h2 class="step-title">Network devices &amp; sonars</h2>
+              <p class="step-sub">Scans the vehicle subnet for devices, finds Ping sonars on USB/serial and
+                Ethernet through the BlueOS Ping service, and checks that sonar data is flowing — including
+                DISTANCE_SENSOR messages from a Ping altimeter reaching the autopilot.</p>
+
+              <v-card outlined class="pa-4">
+                <div v-if="devices.running" class="text-center pa-6">
+                  <v-progress-circular indeterminate color="secondary" size="48" class="mb-3"></v-progress-circular>
+                  <div>Scanning… (about 10–20 seconds)</div>
+                </div>
+                <div v-else-if="devices.result">
+                  <div class="d-flex align-center mb-3">
+                    <result-chip :result="devices.result.result"></result-chip>
+                    <span class="ml-3">{{ devices.result.summary }}</span>
+                  </div>
+                  <div class="overline">Checks</div>
+                  <v-simple-table dense class="mb-4">
+                    <tbody>
+                      <tr v-for="(c, i) in devices.result.checks" :key="'c' + i">
+                        <td style="width: 110px"><result-chip :result="c.result"></result-chip></td>
+                        <td class="font-weight-medium">{{ c.name }}</td>
+                        <td class="grey--text text--darken-2">{{ c.detail }}</td>
+                      </tr>
+                    </tbody>
+                  </v-simple-table>
+                  <div class="overline">Hosts on {{ devices.result.subnet }}</div>
+                  <v-simple-table dense>
+                    <thead><tr><th>IP</th><th>Identified as</th><th>Open ports</th><th>MAC</th></tr></thead>
+                    <tbody>
+                      <tr v-for="h in devices.result.hosts" :key="h.ip">
+                        <td>{{ h.ip }}</td><td>{{ h.identified || '—' }}</td>
+                        <td>{{ (h.open_ports || []).join(', ') || '—' }}</td><td>{{ h.mac || '—' }}</td>
+                      </tr>
+                    </tbody>
+                  </v-simple-table>
+                </div>
+                <v-alert v-else-if="devices.error" type="error" text class="mb-0">{{ devices.error }}</v-alert>
+                <div v-else class="grey--text text--darken-1 pa-4 text-center">Not run yet.</div>
+              </v-card>
+
+              <div class="actions">
+                <v-btn text @click="step = 2" :disabled="devices.running">Back</v-btn>
+                <v-spacer></v-spacer>
+                <v-btn outlined color="primary" class="mr-2" :disabled="devices.running" @click="runDevices">
+                  <v-icon left>mdi-radar</v-icon>{{ devices.result ? 'Scan again' : 'Scan devices' }}
+                </v-btn>
+                <v-btn color="primary" depressed large :disabled="devices.running" @click="step = 4">
+                  {{ devices.result ? 'Next' : 'Skip' }}<v-icon right>mdi-arrow-right</v-icon>
+                </v-btn>
+              </div>
+            </v-stepper-content>
+
+            <!-- 4. Power ---------------------------------------------------------->
+            <v-stepper-content step="4">
+              <h2 class="step-title">Power sensor calibration</h2>
+              <p class="step-sub">Measure the battery voltage (and current, if you have a clamp meter) and enter the
+                readings. The new <code>BATT_VOLT_MULT</code> / <code>BATT_AMP_PERVLT</code> are computed the same way
+                as in BlueOS <em>Vehicle Setup → Power</em>.</p>
+
+              <v-row>
+                <v-col cols="12" md="5">
+                  <v-card outlined class="pa-4 fill-height">
+                    <div class="overline">Autopilot reports</div>
+                    <div class="metric">{{ telemetry.voltage != null ? telemetry.voltage.toFixed(2) : '—' }}<span> V</span></div>
+                    <div class="metric">{{ telemetry.current != null ? telemetry.current.toFixed(2) : '—' }}<span> A</span></div>
+                    <div class="metric-sub" v-if="vehicle && vehicle.battery">
+                      BATT_VOLT_MULT {{ vehicle.battery.BATT_VOLT_MULT }} · BATT_AMP_PERVLT {{ vehicle.battery.BATT_AMP_PERVLT }}
+                    </div>
+                    <div class="metric-sub" v-if="vehicle && vehicle.defaults">
+                      {{ vehicle.model_key }} defaults: {{ vehicle.defaults.BATT_VOLT_MULT }} / {{ vehicle.defaults.BATT_AMP_PERVLT }}
+                    </div>
+                  </v-card>
+                </v-col>
+                <v-col cols="12" md="7">
+                  <v-card outlined class="pa-4 fill-height">
+                    <div class="overline mb-2">Measured with a meter</div>
+                    <v-row dense>
+                      <v-col cols="6"><v-text-field v-model="power.measured_v" type="number" step="0.01" label="Voltage" suffix="V" outlined dense></v-text-field></v-col>
+                      <v-col cols="6"><v-text-field v-model="power.measured_a" type="number" step="0.01" label="Current (optional)" suffix="A" outlined dense></v-text-field></v-col>
+                    </v-row>
+                    <v-btn outlined color="primary" :loading="power.busy" :disabled="!power.measured_v && !power.measured_a" @click="previewPower">Calculate</v-btn>
+                  </v-card>
+                </v-col>
+              </v-row>
+
+              <v-card v-if="power.preview" outlined class="pa-4 mt-4">
+                <v-simple-table dense v-if="Object.keys(power.preview.changes).length">
+                  <thead><tr><th>Parameter</th><th>Current</th><th>New</th><th>Vehicle default</th><th>Deviation</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(c, name) in power.preview.changes" :key="name">
+                      <td><code>{{ name }}</code></td><td>{{ c.old }}</td><td class="font-weight-bold">{{ c.new }}</td>
+                      <td>{{ dash(c.default) }}</td><td>{{ c.deviation_pct != null ? c.deviation_pct + ' %' : '—' }}</td>
+                    </tr>
+                  </tbody>
+                </v-simple-table>
+                <v-alert v-for="(w, i) in power.preview.warnings" :key="'w' + i" type="warning" text dense class="mt-3 mb-0">{{ w }}</v-alert>
+                <v-checkbox v-if="power.preview.warnings.length && Object.keys(power.preview.changes).length"
+                            v-model="power.confirmWarnings" color="warning" hide-details
+                            label="I have double-checked my meter readings and want to apply anyway"></v-checkbox>
+                <v-alert v-if="power.done" :type="power.done.ok ? 'success' : 'error'" text class="mt-3 mb-0">
+                  {{ power.done.ok ? 'Calibration applied and logged.' : 'Errors: ' + power.done.errors.join('; ') }}
+                </v-alert>
+              </v-card>
+              <v-alert v-if="power.error" type="error" text class="mt-4">{{ power.error }}</v-alert>
+
+              <div class="actions">
+                <v-btn text @click="step = 3">Back</v-btn>
+                <v-spacer></v-spacer>
+                <v-btn v-if="!power.done" text color="primary" class="mr-2" @click="skipPower">Skip calibration</v-btn>
+                <v-btn v-if="!power.done" color="primary" depressed large
+                       :disabled="!power.preview || !Object.keys(power.preview.changes).length || (power.preview.warnings.length > 0 && !power.confirmWarnings)"
+                       :loading="power.busy" @click="applyPower">Apply</v-btn>
+                <v-btn v-else color="primary" depressed large @click="step = 5">Next<v-icon right>mdi-arrow-right</v-icon></v-btn>
+              </div>
+            </v-stepper-content>
+
+            <!-- 5. Hardware tests ---------------------------------------------------->
+            <v-stepper-content step="5">
+              <v-row>
+                <v-col cols="12" md="3">
+                  <v-list dense class="test-list" outlined>
+                    <v-list-item v-for="(t, i) in tests" :key="t.id" :input-value="i === testIndex" color="primary" @click="selectTest(i)">
+                      <v-list-item-content><v-list-item-title>{{ t.name }}</v-list-item-title></v-list-item-content>
+                      <v-list-item-action><result-chip v-if="results[t.id]" :result="results[t.id].result"></result-chip></v-list-item-action>
+                    </v-list-item>
+                  </v-list>
+                  <v-switch v-model="autoAdvance" label="Auto-advance on pass" color="primary" dense hide-details class="mt-3"></v-switch>
+                </v-col>
+
+                <v-col cols="12" md="9" v-if="currentTest">
+                  <div class="d-flex align-center">
+                    <h2 class="step-title mb-0">{{ currentTest.name }}</h2>
+                    <v-chip small outlined class="ml-3">Output {{ currentTest.channel }}</v-chip>
+                    <v-spacer></v-spacer>
+                    <span class="grey--text">{{ testIndex + 1 }} / {{ tests.length }}</span>
+                  </div>
+
+                  <v-card outlined class="pa-6 mt-4 test-card" :class="{ 'test-running': running }">
+                    <div class="expect">Watch for <strong>{{ expectText(currentTest) }}</strong>.</div>
+
+                    <div v-if="isBoat && currentTest.category === 'motor'" class="my-4 text-center">
+                      <blueboat-rotation :side="boatSide"></blueboat-rotation>
+                    </div>
+
+                    <div v-if="testPhase === 'running'" class="mt-4">
+                      <div class="space-prompt">
+                        Press <kbd>SPACE</kbd> if this is <strong>NOT</strong> happening
+                      </div>
+                      <v-progress-linear :value="testProgress" height="14" rounded color="secondary" class="my-4"></v-progress-linear>
+                      <div class="d-flex align-center">
+                        <span class="text-h6 font-weight-light">{{ testState.value_label }}</span>
+                        <v-spacer></v-spacer>
+                        <span class="grey--text">{{ (testState.duration - testState.elapsed).toFixed(1) }} s</span>
+                      </div>
+                      <v-btn block x-large color="error" depressed class="mt-4" @click="flagFail">
+                        <v-icon left>mdi-close-octagon</v-icon>Not working (Space)
+                      </v-btn>
+                    </div>
+
+                    <div v-else-if="['preparing', 'rebooting', 'cooldown', 'restoring'].includes(testPhase)" class="text-center mt-6">
+                      <v-progress-circular indeterminate color="secondary" size="40"></v-progress-circular>
+                      <div class="mt-3">{{ testState.message }}…</div>
+                      <div v-if="testPhase === 'rebooting'" class="grey--text mt-1">This can take up to a minute.</div>
+                    </div>
+
+                    <div v-else-if="showOutcome && lastResult" class="mt-4">
+                      <div class="outcome" :class="'outcome-' + lastResult.result.toLowerCase()">
+                        <v-icon x-large :color="lastResult.result === 'PASS' ? 'success' : 'error'">
+                          {{ lastResult.result === 'PASS' ? 'mdi-check-circle' : 'mdi-alert-circle' }}</v-icon>
+                        <div>
+                          <div class="text-h5 font-weight-medium">{{ lastResult.result }}</div>
+                          <div v-if="lastResult.fail_at_s != null">Flagged at {{ lastResult.fail_at_s.toFixed(1) }} s</div>
+                          <div v-if="lastResult.error" class="error--text">{{ lastResult.error }}</div>
+                        </div>
+                      </div>
+                      <div v-if="lastResult.result !== 'PASS'" class="mt-3">
+                        <a v-if="troubleshootingUrl" :href="troubleshootingUrl" target="_blank" rel="noopener">
+                          <v-icon small color="primary">mdi-book-open-variant</v-icon> Troubleshooting guide</a>
+                        <span v-else class="grey--text"><v-icon small>mdi-book-open-variant</v-icon> Troubleshooting guide for this test is coming soon.</span>
+                      </div>
+                      <div v-if="advanceCountdown != null" class="mt-3 grey--text">
+                        Next test in {{ advanceCountdown }} s… <a @click="cancelAdvance">cancel</a>
+                      </div>
+                    </div>
+
+                    <div v-else class="mt-4 grey--text text--darken-1">
+                      The output is swept through its range for {{ (status && status.settings.duration_s) || 5 }} seconds.
+                    </div>
+
+                    <v-alert v-if="testError" type="error" text class="mt-4 mb-0">{{ testError }}</v-alert>
+                  </v-card>
+
+                  <div class="actions">
+                    <v-btn text @click="step = 4" :disabled="busyTest">Back</v-btn>
+                    <v-btn v-if="busyTest" text color="error" @click="abortTest"><v-icon left>mdi-stop</v-icon>Abort</v-btn>
+                    <v-spacer></v-spacer>
+                    <v-btn text :disabled="busyTest" @click="skipTest">Skip</v-btn>
+                    <v-btn v-if="!showOutcome" color="primary" depressed large :disabled="busyTest" @click="startTest">
+                      <v-icon left>mdi-play</v-icon>Start test
+                    </v-btn>
+                    <template v-else>
+                      <v-btn outlined color="primary" class="mr-2" @click="startTest"><v-icon left>mdi-replay</v-icon>Retry</v-btn>
+                      <v-btn color="primary" depressed large @click="nextTest(true)">
+                        {{ testIndex < tests.length - 1 ? 'Continue' : 'Finish' }}<v-icon right>mdi-arrow-right</v-icon>
+                      </v-btn>
+                    </template>
+                  </div>
+                </v-col>
+                <v-col v-else cols="12" md="9">
+                  <v-alert type="info" text>No hardware outputs detected to test.</v-alert>
+                  <div class="actions"><v-spacer></v-spacer>
+                    <v-btn color="primary" depressed large @click="step = 6; finishSession()">Finish</v-btn></div>
+                </v-col>
+              </v-row>
+            </v-stepper-content>
+
+            <!-- 6. Finish ------------------------------------------------------------->
+            <v-stepper-content step="6">
+              <div class="d-flex align-center mb-2">
+                <h2 class="step-title mb-0">Results</h2>
+                <v-spacer></v-spacer>
+                <result-chip v-if="finish && finish.summary" :result="finish.summary.overall"></result-chip>
+              </div>
+              <v-progress-linear v-if="finishing" indeterminate color="secondary"></v-progress-linear>
+              <v-alert v-if="finish && finish.error" type="error" text>{{ finish.error }}</v-alert>
+
+              <v-card outlined class="mb-4">
+                <v-simple-table>
+                  <thead><tr><th>Test</th><th>Result</th><th>Detail</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(r, i) in summaryRows" :key="'r' + i">
+                      <td>{{ r.name }}</td><td><result-chip :result="r.result"></result-chip></td>
+                      <td class="grey--text text--darken-2">{{ r.detail }}</td>
+                    </tr>
+                  </tbody>
+                </v-simple-table>
+              </v-card>
+
+              <div v-if="finish && finish.files" class="mb-2">
+                Log saved to <code>extensions/selftest/{{ finish.files[0] }}</code>
+                (<a :href="'api/logs/' + finish.files[0]" target="_blank">view</a> ·
+                <a :href="'api/logs/' + finish.files[1]" target="_blank">JSON</a>)
+              </div>
+
+              <v-card outlined class="file-browser-card">
+                <div class="d-flex align-center px-4 py-2">
+                  <v-icon color="primary" class="mr-2">mdi-folder-open</v-icon>
+                  <span class="font-weight-medium">BlueOS File Browser — extensions/selftest</span>
+                  <v-spacer></v-spacer>
+                  <v-btn small text color="primary" :href="blueosFileBrowserUrl" target="_blank">Open in BlueOS<v-icon right small>mdi-open-in-new</v-icon></v-btn>
+                </div>
+                <iframe v-if="step === 6" :src="fileBrowserUrl" class="file-browser" title="BlueOS File Browser"></iframe>
+              </v-card>
+
+              <div class="actions">
+                <v-spacer></v-spacer>
+                <v-btn color="primary" depressed large @click="restart"><v-icon left>mdi-restart</v-icon>Test another vehicle</v-btn>
+              </div>
+            </v-stepper-content>
+          </v-stepper-items>
+        </v-stepper>
+      </v-container>
+    </v-main>
+
+    <v-footer app color="white" class="br-footer">
+      <span>BlueOS Self Test {{ status ? 'v' + status.version : '' }}</span>
+      <v-spacer></v-spacer>
+      <a href="https://bluerobotics.com" target="_blank" rel="noopener">bluerobotics.com</a>
+    </v-footer>
+  </v-app>
+</script>
+
+<!-- BlueBoat thruster rotation, viewed from behind (stern). Inboard blades move UP. -->
+<script type="text/x-template" id="blueboat-rotation-template">
+  <svg viewBox="0 0 520 300" class="boat-svg" role="img" aria-label="BlueBoat thruster rotation viewed from the stern">
+    <defs>
+      <marker id="arrowhead" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="7" refY="7" orient="auto">
+        <path d="M0,0 L14,7 L0,14 z" fill="#135ea4"></path>
+      </marker>
+      <marker id="arrowhead-up" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="9" refY="9" orient="auto">
+        <path d="M0,0 L18,9 L0,18 z" fill="#7ac943"></path>
+      </marker>
+    </defs>
+    <text x="260" y="22" text-anchor="middle" class="svg-caption">Viewed from behind the boat (stern)</text>
+    <!-- deck + hulls -->
+    <rect x="60" y="45" width="400" height="22" rx="6" fill="#403b3b"></rect>
+    <rect x="70" y="67" width="90" height="62" rx="20" fill="#909d8d"></rect>
+    <rect x="360" y="67" width="90" height="62" rx="20" fill="#909d8d"></rect>
+    <!-- left thruster: counter-clockwise viewed from behind (inboard side moves up) -->
+    <g :class="{ active: side === 'left', dim: side === 'right' }">
+      <circle cx="115" cy="200" r="40" fill="#fff" stroke="#403b3b" stroke-width="4"></circle>
+      <circle cx="115" cy="200" r="8" fill="#403b3b"></circle>
+      <path d="M 125 255 A 56 56 0 0 0 125 145" fill="none" stroke="#7ac943" stroke-width="6" marker-end="url(#arrowhead-up)"></path>
+      <path d="M 105 145 A 56 56 0 0 0 105 255" fill="none" stroke="#135ea4" stroke-width="3" marker-end="url(#arrowhead)"></path>
+      <text x="115" y="288" text-anchor="middle" class="svg-label">LEFT (port)</text>
+    </g>
+    <!-- right thruster: clockwise viewed from behind (inboard side moves up) -->
+    <g :class="{ active: side === 'right', dim: side === 'left' }">
+      <circle cx="405" cy="200" r="40" fill="#fff" stroke="#403b3b" stroke-width="4"></circle>
+      <circle cx="405" cy="200" r="8" fill="#403b3b"></circle>
+      <path d="M 395 255 A 56 56 0 0 1 395 145" fill="none" stroke="#7ac943" stroke-width="6" marker-end="url(#arrowhead-up)"></path>
+      <path d="M 415 145 A 56 56 0 0 1 415 255" fill="none" stroke="#135ea4" stroke-width="3" marker-end="url(#arrowhead)"></path>
+      <text x="405" y="288" text-anchor="middle" class="svg-label">RIGHT (starboard)</text>
+    </g>
+    <text x="260" y="190" text-anchor="middle" class="svg-up">▲ UP</text>
+    <text x="260" y="211" text-anchor="middle" class="svg-caption">blades move up</text>
+    <text x="260" y="227" text-anchor="middle" class="svg-caption">in the middle</text>
+  </svg>
+</script>
+
+<script src="static/vendor/js/vue.min.js"></script>
+<script src="static/vendor/js/vuetify.min.js"></script>
+<script src="static/app.js"></script>
+</body>
+</html>

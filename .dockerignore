@@ -1,0 +1,5 @@
+app/static/vendor
+**/__pycache__
+.pytest_cache
+tests
+.git

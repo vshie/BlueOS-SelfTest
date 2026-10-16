@@ -1,0 +1,29 @@
+name: Deploy BlueOS Extension Image
+
+on:
+  # Automatically run when a new commit is added to the repository
+  push:
+  # Run manually
+  workflow_dispatch:
+
+permissions:
+  # Required for the release-upload step in the BlueOS-community deploy action,
+  # which attaches per-arch image tarballs to a GitHub Release on git-tag pushes.
+  contents: write
+
+jobs:
+  deploy-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy BlueOS Extension
+        uses: BlueOS-community/Deploy-BlueOS-Extension@v1.5.0
+        with:
+          docker-username: ${{ secrets.DOCKER_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_PASSWORD }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ vars.IMAGE_NAME || 'selftest' }}
+          author: ${{ vars.MY_NAME }}
+          author-email: ${{ vars.MY_EMAIL }}
+          maintainer: ${{ vars.ORG_NAME }}
+          maintainer-email: ${{ vars.ORG_EMAIL }}
+          build-platforms: 'linux/arm/v7,linux/arm64/v8'

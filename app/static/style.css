@@ -1,0 +1,77 @@
+/* Blue Robotics style guide: white (Coconut) background, Roboto,
+   Mariner Blue #135ea4 / BR Blue #2699d0, Oyster #403b3b text. */
+:root {
+  --br-blue: #2699d0;
+  --mariner: #135ea4;
+  --whale: #012f46;
+  --tether: #fedd00;
+  --tuna: #909d8d;
+  --oyster: #403b3b;
+  --pass: #7ac943;
+  --fail: #ff1d25;
+}
+
+html, body, .v-application {
+  font-family: 'Roboto', sans-serif !important;
+  color: var(--oyster);
+  background: #fff !important;
+}
+.v-application .text-h1, .v-application .text-h2, .v-application .text-h3,
+.v-application .text-h4, .v-application .text-h5, .v-application .text-h6,
+.v-application .overline { font-family: 'Roboto', sans-serif !important; }
+
+.br-appbar { border-bottom: 1px solid #e6e8ea !important; }
+.br-logo { height: 34px; width: auto; display: block; }   /* never stretched or recoloured */
+.app-title { font-size: 20px; font-weight: 500; color: var(--mariner); letter-spacing: .2px; }
+.br-main { background: #fff; }
+
+.br-stepper { background: transparent !important; }
+.br-stepper .v-stepper__header { box-shadow: none; border-bottom: 1px solid #eef0f2; }
+.br-stepper .v-stepper__content { padding: 24px 4px 16px; }
+
+.step-title { font-size: 24px; font-weight: 500; color: var(--whale); margin-bottom: 4px; }
+.step-sub { color: #5d5858; max-width: 820px; }
+.actions { display: flex; align-items: center; margin-top: 24px; }
+
+.kv td { padding: 3px 12px 3px 0; }
+.kv td:first-child { color: var(--tuna); }
+
+.metric-label { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--tuna); }
+.metric { font-size: 40px; font-weight: 300; color: var(--mariner); line-height: 1.2; }
+.metric span { font-size: 18px; color: var(--oyster); }
+.metric-sub { font-size: 13px; color: var(--tuna); margin-top: 4px; }
+
+.test-list { border-radius: 6px; }
+.test-card { border-width: 2px !important; transition: border-color .2s; }
+.test-card.test-running { border-color: var(--br-blue) !important; }
+.expect { font-size: 18px; }
+.space-prompt {
+  font-size: 22px; text-align: center; padding: 14px; border-radius: 6px;
+  background: #fffbe0; border: 2px solid var(--tether);
+}
+kbd {
+  background: var(--oyster); color: #fff; border-radius: 4px;
+  padding: 2px 10px; font-family: Consolas, 'Roboto Mono', monospace; font-size: .9em;
+}
+.outcome { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: 6px; }
+.outcome-pass { background: #f1f9ea; }
+.outcome-fail, .outcome-error, .outcome-aborted { background: #fff0f0; }
+
+.file-browser-card { overflow: hidden; }
+.file-browser { width: 100%; height: 480px; border: 0; border-top: 1px solid #eef0f2; display: block; }
+
+.br-footer { font-size: 13px; color: var(--tuna); border-top: 1px solid #eef0f2 !important; }
+.br-footer a { color: var(--br-blue); text-decoration: none; }
+
+.boat-svg { width: 100%; max-width: 520px; }
+.boat-svg .svg-caption { font: 13px Roboto, sans-serif; fill: var(--tuna); }
+.boat-svg .svg-label { font: 500 14px Roboto, sans-serif; fill: var(--oyster); }
+.boat-svg .svg-up { font: 700 16px Roboto, sans-serif; fill: var(--pass); }
+.boat-svg g { transition: opacity .2s; }
+.boat-svg g.dim { opacity: .25; }
+.boat-svg g.active circle:first-child { stroke: var(--br-blue); }
+
+@media (max-width: 600px) {
+  .br-logo { height: 24px; }
+  .metric { font-size: 30px; }
+}
