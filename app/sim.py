@@ -166,9 +166,13 @@ class SimClient:
         self.params[name] = float(value)
         return float(value)
 
-    def blueos_get(self, path):
+    def blueos_get(self, path, timeout_s=None):
+        if "/board" in path:
+            return {"name": "Navigator"}
+        if "available_firmwares" in path:
+            return [{"name": f"STABLE-{v}"} for v in ("4.7.2", "4.7.1", "4.5.7")] + [{"name": "BETA"}]
         if "vehicle_name" in path:
             return "Simulated vehicle"
         if "version" in path:
-            return {"tag": "sim"}
+            return {"tag": "1.4.6"}
         return None

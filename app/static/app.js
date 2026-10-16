@@ -153,7 +153,7 @@ Vue.component('result-chip', {
     color () {
       return {
         PASS: 'success', FAIL: 'error', ERROR: 'error', ABORTED: 'error',
-        WARN: 'warning', SKIPPED: 'grey', DONE: 'primary'
+        WARN: 'warning', UPDATE: 'warning', SKIPPED: 'grey', DONE: 'primary'
       }[this.result] || 'grey lighten-1'
     }
   },
@@ -279,6 +279,7 @@ new Vue({
       if (!this.isBoat || !this.currentTest || this.currentTest.category !== 'motor') return null
       return { 73: 'left', 74: 'right' }[this.currentTest.function] || null
     },
+    versions () { return this.status && this.status.versions },
     frameKind () {
       if (!this.vehicle) return null
       if (this.isBoat) return 'boat'
@@ -315,6 +316,7 @@ new Vue({
     summaryRows () {
       const rows = []
       const r = this.results
+      if (r.versions) rows.push({ name: 'Software versions', result: r.versions.result, detail: r.versions.summary || '' })
       if (r.network) rows.push({ name: 'Network (browser ↔ vehicle)', result: r.network.result, detail: this.netDetail(r.network) })
       if (r.devices) rows.push({ name: 'Network devices & sonars', result: r.devices.result, detail: r.devices.summary || '' })
       if (r.power) rows.push({ name: 'Power sensor calibration', result: r.power.result, detail: this.powerDetail(r.power) })
@@ -525,6 +527,7 @@ new Vue({
       clearInterval(this._advanceTimer)
       this.advanceCountdown = null
     },
+    blueosPage (path) { return `${blueosRoot()}${path}` },
     testDuration (t) {
       const st = (this.status && this.status.settings) || {}
       const key = { motor: 'motor_duration_s', actuator: 'actuator_duration_s' }[t.category] || 'duration_s'

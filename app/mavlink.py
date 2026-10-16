@@ -126,9 +126,9 @@ class MavlinkClient:
         return self.base_url is not None
 
     # -- HTTP ---------------------------------------------------------------
-    def _get_json_abs(self, url: str) -> Optional[dict]:
+    def _get_json_abs(self, url: str, timeout_s: Optional[float] = None) -> Optional[dict]:
         try:
-            r = self._session.get(url, timeout=self.http_timeout_s)
+            r = self._session.get(url, timeout=timeout_s or self.http_timeout_s)
             if r.status_code != 200:
                 return None
             body = (r.text or "").strip()
@@ -347,11 +347,11 @@ class MavlinkClient:
         return float(result["value"])
 
     # -- BlueOS helpers -----------------------------------------------------
-    def blueos_get(self, path: str) -> Optional[dict]:
+    def blueos_get(self, path: str, timeout_s: Optional[float] = None) -> Optional[dict]:
         """GET another BlueOS service on the same nginx (e.g. /beacon/...)."""
         if not self.base_url:
             return None
         root = self.base_url.rsplit("/mavlink2rest", 1)[0]
         if ":6040" in root:
             root = root.replace(":6040", "")
-        return self._get_json_abs(f"{root}{path}")
+        return self._get_json_abs(f"{root}{path}", timeout_s)

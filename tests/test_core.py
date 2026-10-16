@@ -136,3 +136,24 @@ def test_ping_protocol_framing():
     assert devices.general_request(5).hex() == "425202000600000005" + "00a100"
     frame = devices.ping_msg(1211, struct.pack("<IB", 1234, 99))
     assert devices.ping_parse_all(b"junk" + frame) == [(1211, struct.pack("<IB", 1234, 99))]
+
+
+def test_version_checks():
+    import versions
+    versions._cache.clear()
+    sim = SimClient("bluerov2")
+    out = versions.check_versions(sim, {"firmware": "ArduSub", "firmware_version": "4.5.7"})
+    assert out["result"] == "WARN"
+    assert out["checks"][0]["latest"] == "4.7.2" and out["checks"][0]["update_page"]
+    assert out["checks"][1]["result"] == "PASS"          # sim BlueOS 1.4.6
+    versions._cache.clear()
+    assert versions.check_versions(sim, {"firmware": "ArduSub", "firmware_version": "4.7.2"})["result"] == "PASS"
+
+    class Offline:
+        def blueos_get(self, *a, **k):
+            return None
+    versions._cache.clear()
+    out = versions.check_versions(Offline(), {"firmware": "ArduRover", "firmware_version": "4.7.2"})
+    assert out["checks"][0]["result"] == "PASS" and "built-in" in out["checks"][0]["detail"]
+    assert out["checks"][1]["result"] == "WARN"           # BlueOS version unknown
+    assert versions.parse_version("1.5.0-beta.2") == (1, 5, 0)

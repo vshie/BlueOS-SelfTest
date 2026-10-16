@@ -98,6 +98,27 @@
                 </v-col>
               </v-row>
 
+              <v-card v-if="vehicle && versions" outlined class="pa-4 mt-4">
+                <div class="overline mb-1">Software versions</div>
+                <v-simple-table dense>
+                  <tbody>
+                    <tr v-for="c in versions.checks" :key="'ver' + c.name">
+                      <td style="width: 90px"><result-chip :result="c.result === 'WARN' ? 'UPDATE' : c.result"></result-chip></td>
+                      <td class="font-weight-medium" style="width: 160px">{{ c.name }}</td>
+                      <td class="grey--text text--darken-2">{{ c.detail }}</td>
+                      <td class="text-right">
+                        <v-btn v-if="c.update_page" small depressed color="warning" :href="blueosPage(c.update_page)" target="_blank">
+                          Update<v-icon right small>mdi-open-in-new</v-icon></v-btn>
+                      </td>
+                    </tr>
+                  </tbody>
+                </v-simple-table>
+                <v-alert v-if="versions.result !== 'PASS'" type="warning" text dense class="mt-3 mb-0">
+                  Please update before testing: results on outdated software may not match production vehicles.
+                  You can still continue, and the version status is recorded in the test log.
+                </v-alert>
+              </v-card>
+
               <v-card v-if="vehicle" outlined class="pa-4 mt-4">
                 <v-row dense>
                   <v-col cols="12" sm="4"><v-text-field v-model="form.operator" label="Operator" outlined dense hide-details></v-text-field></v-col>

@@ -15,13 +15,14 @@ import time
 from flask import Flask, jsonify, request, send_from_directory, Response
 
 import devices
+import versions
 from logger import RunLog, list_logs, read_log
 from mavlink import MavlinkClient, MavlinkError
 from restore_state import RestoreJournal
 from tests_runner import Runner
 from vehicle import Detector, calibration
 
-EXTENSION_VERSION = "1.1.0"     # keep in sync with the Dockerfile `version` label
+EXTENSION_VERSION = "1.2.0"     # keep in sync with the Dockerfile `version` label
 PORT = int(os.environ.get("SELFTEST_PORT", "9450"))
 LOG_DIR = os.environ.get("SELFTEST_LOG_DIR", "/app/logs")
 SIM = os.environ.get("SELFTEST_SIM", "").strip().lower()
@@ -58,6 +59,7 @@ app_state = {
     "vehicle": None,
     "run": None,          # RunLog
     "results": {},        # test_id -> latest result
+    "versions": None,     # firmware / BlueOS version check
 }
 
 
@@ -115,6 +117,12 @@ def run_detection() -> None:
         vehicle = Detector(client, progress).run()
         app_state["vehicle"] = vehicle
         runner.set_vehicle(vehicle)
+        progress("Checking firmware and BlueOS versions", 0.99)
+        try:
+            app_state["versions"] = versions.check_versions(client, vehicle)
+        except Exception as e:  # noqa: BLE001
+            logger.error("Version check failed: %s", e)
+            app_state["versions"] = None
         app_state["detect"].update(status="done", progress=1.0, message="Done")
     except Exception as e:  # noqa: BLE001
         logger.error("Detection failed: %s", e)
@@ -172,6 +180,7 @@ def api_status():
         "vehicle": app_state["vehicle"],
         "run": {"files": run.files, "basename": run.basename} if run else None,
         "results": app_state["results"],
+        "versions": app_state["versions"],
         "restore_pending": journal.pending(),
         "troubleshooting": TROUBLESHOOTING_URLS,
         "settings": runner.settings,
@@ -222,6 +231,10 @@ def api_session_start():
     app_state["results"] = {}
     app_state["run"] = RunLog(LOG_DIR, vehicle, meta)
     app_state["run"].event("Session started")
+    if app_state["versions"]:
+        app_state["run"].versions(app_state["versions"])
+        app_state["results"]["versions"] = {"id": "versions", "result": app_state["versions"]["result"],
+                                            "summary": "; ".join(c["detail"] for c in app_state["versions"]["checks"])}
     return jsonify({"ok": True, "files": app_state["run"].files})
 
 
@@ -429,7 +442,7 @@ def api_session_finish():
     run = current_log()
     if not run:
         return jsonify({"ok": False, "error": "No session"}), 400
-    tests = [r for k, r in app_state["results"].items() if k not in ("network", "power", "devices")]
+    tests = [r for k, r in app_state["results"].items() if k not in ("network", "power", "devices", "versions")]
     summary = {
         "passed": sum(r["result"] == "PASS" for r in tests),
         "failed": sum(r["result"] == "FAIL" for r in tests),

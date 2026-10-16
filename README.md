@@ -16,6 +16,13 @@ wizard the log folder opens in the BlueOS File Browser.
    - Camera tilt (MountTilt): 7.
    - Camera focus: 92.
    - Camera zoom: 180.
+   **Software versions:** the autopilot firmware is compared with the newest *STABLE*
+   ArduSub / ArduRover release for the board. The list comes from BlueOS's own
+   Autopilot Firmware page (`/ardupilot-manager/v1.0/available_firmwares`); if the
+   vehicle has no internet, a built-in list in `app/versions.py` is used. BlueOS must
+   be **1.4.6 or newer**. If either is out of date, the tester is prompted to update,
+   with links to BlueOS → Autopilot Firmware / Version Chooser. They can still continue,
+   and the version status is written to the log.
 2. **Network test.** Measures latency, download and upload between *this browser* and the
    vehicle, using BlueOS's built-in network-test service (`/network-test/*`). These are the
    same endpoints the BlueOS speed-test widget uses. BlueOS's iperf3 server (TCP 5201) is raw

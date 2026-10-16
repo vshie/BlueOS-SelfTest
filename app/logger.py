@@ -110,6 +110,15 @@ class RunLog:
             self._append("\n".join(lines) + "\n")
             self._flush_json()
 
+    def versions(self, result: dict) -> None:
+        with self._lock:
+            self.data["versions"] = result
+            lines = ["--- Software versions ---"]
+            for c in result.get("checks") or []:
+                lines.append(f"  [{c['result']:<4}] {c['name']}: {c['detail']}")
+            self._append("\n".join(lines) + "\n")
+            self._flush_json()
+
     def devices(self, result: dict) -> None:
         with self._lock:
             self.data["devices"] = result
