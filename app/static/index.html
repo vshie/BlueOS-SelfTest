@@ -21,6 +21,8 @@
       <v-divider vertical class="mx-4 my-5"></v-divider>
       <div class="app-title">Self Test</div>
       <v-spacer></v-spacer>
+      <v-switch v-model="productionMode" inset dense hide-details color="primary" class="mr-4 mt-0 production-switch"
+                :disabled="step !== 1" label="Production mode"></v-switch>
       <v-chip v-if="status && status.sim" small color="accent" class="mr-2 font-weight-medium">SIMULATION</v-chip>
       <v-chip small :color="status && status.connected ? 'success' : 'error'" text-color="white" class="mr-2">
         <v-icon left small>{{ status && status.connected ? 'mdi-lan-connect' : 'mdi-lan-disconnect' }}</v-icon>
@@ -97,6 +99,15 @@
                   </v-card>
                 </v-col>
               </v-row>
+
+              <v-alert v-if="vehicle && productionMode" type="info" text class="mt-4 mb-0" icon="mdi-factory">
+                <strong>Production mode:</strong> only the network test and the camera tests run; devices, power,
+                thrusters, lights and gripper are skipped.
+                <span v-if="camera4k && camera4k.detected">4K camera found at {{ camera4k.ip }}: tilt, focus and zoom
+                  are each tested in turn.</span>
+                <span v-else>No 4K camera answered at {{ (camera4k && camera4k.ip) || '192.168.2.10' }}, so only camera
+                  tilt is tested.</span>
+              </v-alert>
 
               <v-card v-if="vehicle && versions" outlined class="pa-4 mt-4">
                 <div class="overline mb-1">Software versions</div>
@@ -188,7 +199,7 @@
                 <v-btn outlined color="primary" class="mr-2" :disabled="net.running" @click="runNetwork">
                   <v-icon left>mdi-speedometer</v-icon>{{ net.result ? 'Run again' : 'Run network test' }}
                 </v-btn>
-                <v-btn color="primary" depressed large :disabled="net.running" @click="step = 3">
+                <v-btn color="primary" depressed large :disabled="net.running" @click="afterNetwork">
                   {{ net.result ? 'Next' : 'Skip' }}<v-icon right>mdi-arrow-right</v-icon>
                 </v-btn>
               </div>
@@ -385,6 +396,7 @@
 
                 <v-col cols="12" md="9" v-else-if="currentTest">
                   <div class="d-flex align-center">
+                    <span v-if="productionMode" class="now-testing mr-2">Now testing</span>
                     <h2 class="step-title mb-0">{{ currentTest.name }}</h2>
                     <v-chip small outlined class="ml-3">Output {{ currentTest.channel }}</v-chip>
                     <v-spacer></v-spacer>
@@ -403,9 +415,9 @@
                       roughly 15–60 seconds and telemetry drops out briefly (video keeps running). You'll be told when to watch the camera.
                     </v-alert>
 
-                    <div v-if="currentTest.category === 'tilt'" class="mt-4">
+                    <div v-if="['tilt', 'focus', 'zoom'].includes(currentTest.category)" class="mt-4">
                       <div class="diagram-caption">Live camera</div>
-                      <live-video :key="'live-' + currentTest.id"></live-video>
+                      <live-video key="live-camera"></live-video>
                     </div>
 
                     <div v-if="tiltNeedsReboot && busyTest" class="tilt-stages mt-4">
@@ -486,7 +498,7 @@
                   </v-card>
 
                   <div class="actions">
-                    <v-btn text @click="step = 4" :disabled="busyTest">Back</v-btn>
+                    <v-btn text @click="backFromTests" :disabled="busyTest">Back</v-btn>
                     <v-btn v-if="busyTest" text color="error" @click="abortTest"><v-icon left>mdi-stop</v-icon>Abort</v-btn>
                     <v-spacer></v-spacer>
                     <v-btn text :disabled="busyTest" @click="skipTest">Skip</v-btn>

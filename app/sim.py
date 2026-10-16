@@ -24,7 +24,8 @@ BASE_SUB = {
 }
 BASE_SUB.update({f"SERVO{n}_FUNCTION": 32 + n for n in range(1, 7)})
 BASE_SUB.update({"SERVO9_FUNCTION": 184, "SERVO13_FUNCTION": 181, "SERVO14_FUNCTION": 182,
-                 "SERVO16_FUNCTION": 7, "MOT_2_DIRECTION": -1, "MOT_5_DIRECTION": -1})
+                 "SERVO16_FUNCTION": 7, "MOT_2_DIRECTION": -1, "MOT_5_DIRECTION": -1,
+                 "SERVO11_FUNCTION": 92, "SERVO12_FUNCTION": 180})
 
 PROFILES = {
     "bluerov2": ("MAV_TYPE_SUBMARINE", BASE_SUB),

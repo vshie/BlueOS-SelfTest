@@ -77,6 +77,20 @@ wizard the log folder opens in the BlueOS File Browser.
 6. **Finish.** Shows a summary, the log file names, and an embedded BlueOS File Browser at
    `extensions/selftest`.
 
+## Production mode
+
+The **Production mode** switch in the top-right corner (available on the Vehicle step) runs a
+short line test:
+- **Steps run:** the network test and the camera tests only, in the usual order. Devices,
+  power calibration, thrusters, lights and gripper are skipped.
+- **Camera tests:** camera tilt is always tested. Focus and zoom are tested only when they are
+  configured outputs **and** the 4K camera answers at **192.168.2.10** (ICMP or TCP 80/554).
+- **Order:** each of the 4K camera's three actuators (focus, zoom, tilt) is tested on its own,
+  with the one being tested shown as "Now testing".
+- **Live video:** the preview is shown for all camera tests.
+- **Logging and persistence:** the mode, and whether the 4K camera was found, are written to
+  the log header. The switch state is remembered in the browser.
+
 ## Safety and non-destructive design
 
 - The user must confirm the vehicle is secured before anything moves.

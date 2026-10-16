@@ -123,3 +123,7 @@ kbd {
   color: #fff; background: rgba(1, 47, 70, .75); }
 .live-status.error { background: rgba(1, 47, 70, .9); }
 .live-status .v-icon { color: #fff !important; }
+
+.production-switch { flex: 0 0 auto; }
+.production-switch .v-label { font-size: 14px; color: var(--oyster) !important; }
+.now-testing { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--tuna); }

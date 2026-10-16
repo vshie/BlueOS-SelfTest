@@ -292,6 +292,16 @@ def scan_subnet(subnet: str, own: set) -> list:
     return results
 
 
+CAMERA_4K_IP = "192.168.2.10"
+
+
+def probe_4k_camera(ip: str = CAMERA_4K_IP) -> dict:
+    """Is the 4K camera (tilt + focus + zoom) on the vehicle network?"""
+    ports = [p for p in (80, 554) if tcp_open(ip, p, timeout=0.8)]
+    pingable = icmp_ping(ip)
+    return {"ip": ip, "detected": bool(ports or pingable), "open_ports": ports, "ping": pingable}
+
+
 # ---------------------------------------------------------------------------
 # Autopilot rangefinder check
 # ---------------------------------------------------------------------------

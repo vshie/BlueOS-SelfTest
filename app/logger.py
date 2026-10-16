@@ -70,7 +70,7 @@ class RunLog:
         ]
         for key, label in (("vehicle_name", "Vehicle name"), ("blueos_version", "BlueOS"),
                            ("operator", "Operator"), ("serial", "Serial number"),
-                           ("notes", "Notes"), ("extension_version", "Extension")):
+                           ("notes", "Notes"), ("mode", "Mode"), ("extension_version", "Extension")):
             if m.get(key):
                 lines.append(f"{label:<15}: {m[key]}")
         lines.append("")

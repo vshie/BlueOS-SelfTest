@@ -23,10 +23,11 @@ from restore_state import RestoreJournal
 from tests_runner import Runner
 from vehicle import Detector, calibration
 
-EXTENSION_VERSION = "1.4.0"     # keep in sync with the Dockerfile `version` label
+EXTENSION_VERSION = "1.5.0"     # keep in sync with the Dockerfile `version` label
 PORT = int(os.environ.get("SELFTEST_PORT", "9450"))
 LOG_DIR = os.environ.get("SELFTEST_LOG_DIR", "/app/logs")
 SIM = os.environ.get("SELFTEST_SIM", "").strip().lower()
+SIM_4K = os.environ.get("SELFTEST_SIM_4K", "1") == "1"
 
 TROUBLESHOOTING_URLS = {
     # Filled in as the per-hardware troubleshooting guides are published.
@@ -61,6 +62,7 @@ app_state = {
     "run": None,          # RunLog
     "results": {},        # test_id -> latest result
     "versions": None,     # firmware / BlueOS version check
+    "camera4k": None,     # 4K camera probe at 192.168.2.10
 }
 
 
@@ -118,6 +120,9 @@ def run_detection() -> None:
         vehicle = Detector(client, progress).run()
         app_state["vehicle"] = vehicle
         runner.set_vehicle(vehicle)
+        progress("Looking for the 4K camera", 0.985)
+        app_state["camera4k"] = ({"ip": devices.CAMERA_4K_IP, "detected": SIM_4K, "open_ports": [], "ping": SIM_4K}
+                                 if SIM else devices.probe_4k_camera())
         progress("Checking firmware and BlueOS versions", 0.99)
         try:
             app_state["versions"] = versions.check_versions(client, vehicle)
@@ -182,6 +187,7 @@ def api_status():
         "run": {"files": run.files, "basename": run.basename} if run else None,
         "results": app_state["results"],
         "versions": app_state["versions"],
+        "camera4k": app_state["camera4k"],
         "restore_pending": journal.pending(),
         "troubleshooting": TROUBLESHOOTING_URLS,
         "settings": runner.settings,
@@ -229,6 +235,11 @@ def api_session_start():
     for key in ("operator", "serial", "notes"):
         if body.get(key):
             meta[key] = str(body[key])[:200]
+    if body.get("production"):
+        cam = app_state["camera4k"] or {}
+        meta["mode"] = ("Production (network + camera tests only; 4K camera "
+                        + ("detected" if cam.get("detected") else "NOT detected")
+                        + f" at {cam.get('ip', devices.CAMERA_4K_IP)})")
     app_state["results"] = {}
     app_state["run"] = RunLog(LOG_DIR, vehicle, meta)
     app_state["run"].event("Session started")

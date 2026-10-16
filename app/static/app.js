@@ -313,6 +313,7 @@ new Vue({
     advanceCountdown: null,
     paused: false,
     pollTimer: null,
+    productionMode: (() => { try { return localStorage.getItem('selftest.production') === '1' } catch (e) { return false } })(),
     now: Date.now(),
     phaseSince: Date.now(),
     telemetryTimer: null,
@@ -324,20 +325,29 @@ new Vue({
   }),
   computed: {
     vehicle () { return this.status && this.status.vehicle },
-    tests () { return (this.vehicle && this.vehicle.tests) || [] },
+    allTests () { return (this.vehicle && this.vehicle.tests) || [] },
+    camera4k () { return (this.status && this.status.camera4k) || null },
+    // Production mode: only the camera actuators. Focus and zoom are part of
+    // the 4K camera, so they are only tested when it answers at 192.168.2.10.
+    tests () {
+      if (!this.productionMode) return this.allTests
+      const has4k = !!(this.camera4k && this.camera4k.detected)
+      return this.allTests.filter(t => t.category === 'tilt' || (has4k && ['focus', 'zoom'].includes(t.category)))
+    },
     currentTest () { return this.tests[this.testIndex] || null },
     results () { return (this.status && this.status.results) || {} },
     isBoat () { return this.vehicle && this.vehicle.model_key === 'blueboat' },
     detecting () { return this.status && this.status.detect.status === 'running' },
     steps () {
-      return [
+      const all = [
         { n: 1, title: 'Vehicle' },
         { n: 2, title: 'Network' },
         { n: 3, title: 'Devices' },
         { n: 4, title: 'Power sensor' },
-        { n: 5, title: 'Hardware tests' },
+        { n: 5, title: this.productionMode ? 'Camera tests' : 'Hardware tests' },
         { n: 6, title: 'Finish' }
       ]
+      return this.productionMode ? all.filter(s => s.n !== 3 && s.n !== 4) : all
     },
     testPhase () { return this.testState ? this.testState.phase : 'idle' },
     waitingToStart () {
@@ -430,6 +440,11 @@ new Vue({
     blueosFileBrowserUrl () { return `${blueosRoot()}/tools/file-browser` }
   },
   watch: {
+    productionMode (on) {
+      try { localStorage.setItem('selftest.production', on ? '1' : '0') } catch (e) { /* ignore */ }
+      this.testIndex = 0
+      this.testState = null
+    },
     step (n, old) {
       if (old === 5) this.stopPolling()
       if (n === 5) this.startPolling()
@@ -477,7 +492,7 @@ new Vue({
       this.sessionStarting = true
       this.sessionError = null
       try {
-        await api.post('api/session/start', this.form)
+        await api.post('api/session/start', { ...this.form, production: this.productionMode })
         this.testIndex = 0
         this.review = { open: false, done: false, selected: [], submitted: false, failed: [], busy: false }
         this.finish = null
@@ -625,6 +640,8 @@ new Vue({
       clearInterval(this._advanceTimer)
       this.advanceCountdown = null
     },
+    afterNetwork () { this.step = this.productionMode ? 5 : 3 },
+    backFromTests () { this.step = this.productionMode ? 2 : 4 },
     blueosPage (path) { return `${blueosRoot()}${path}` },
     testDuration (t) {
       const st = (this.status && this.status.settings) || {}
