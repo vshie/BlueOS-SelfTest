@@ -140,8 +140,8 @@ function networkVerdict (res) {
   if (res.error || !res.latency || res.latency.error) return 'FAIL'
   const down = res.download_mbps || 0
   const up = res.upload_mbps || 0
-  if (down < 10 || up < 10 || res.latency.avg > 100) return 'FAIL'
-  if (down < 50 || up < 50 || res.latency.avg > 20 || res.latency.lost > 0) return 'WARN'
+  // A tether link only needs a few Mbit/s for video + telemetry
+  if (down < 5 || up < 5) return 'WARN'
   return 'PASS'
 }
 
