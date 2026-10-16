@@ -106,3 +106,10 @@ kbd {
 
 .troubleshoot-card { border-color: var(--fail) !important; }
 .troubleshoot-list li { margin-bottom: 6px; }
+
+.expect-waiting { color: var(--tuna); }
+.wait-note { display: inline-block; padding: 8px 14px; border-radius: 6px; background: #f4f6f8; color: var(--oyster); }
+.tilt-stages { border-left: 3px solid #eef0f2; padding-left: 12px; }
+.tilt-stage { padding: 4px 0; color: var(--tuna); display: flex; align-items: center; }
+.tilt-stage.current { color: var(--oyster); font-weight: 500; }
+.tilt-stage.done { color: var(--oyster); }

@@ -392,7 +392,25 @@
                   </div>
 
                   <v-card outlined class="pa-6 mt-4 test-card" :class="{ 'test-running': running }">
-                    <div class="expect">Watch for <strong>{{ expectText(currentTest) }}</strong>.</div>
+                    <div class="expect" :class="{ 'expect-waiting': waitingToStart }">
+                      <template v-if="waitingToStart">Get ready to watch for</template><template v-else>Watch for</template>
+                      <strong>{{ expectText(currentTest) }}</strong>.
+                    </div>
+
+                    <v-alert v-if="tiltNeedsReboot && testPhase === 'idle'" type="info" text class="mt-4 mb-0" icon="mdi-restart">
+                      Camera stabilization is on, so this test <strong>reboots the autopilot twice</strong>: once to turn
+                      stabilization off before the tilt sweep, and once to turn it back on afterwards. Each reboot takes
+                      roughly 15–60 seconds and the video and telemetry drop out briefly. You'll be told when to watch the camera.
+                    </v-alert>
+
+                    <div v-if="tiltNeedsReboot && busyTest" class="tilt-stages mt-4">
+                      <div v-for="s in tiltStages" :key="'ts' + s.n" class="tilt-stage" :class="{ current: s.n === tiltStage, done: s.n < tiltStage }">
+                        <v-icon small class="mr-2" :color="s.n < tiltStage ? 'success' : (s.n === tiltStage ? 'secondary' : 'grey')">
+                          {{ s.n < tiltStage ? 'mdi-check-circle' : (s.n === tiltStage ? 'mdi-circle-slice-5' : 'mdi-circle-outline') }}</v-icon>
+                        {{ s.label }}
+                        <span v-if="s.n === 3 && testState.sweep_result" class="ml-2"><result-chip :result="testState.sweep_result"></result-chip></span>
+                      </div>
+                    </div>
 
                     <v-row v-if="currentTest.category === 'motor' && frameKind" class="my-2" align="center" justify="center">
                       <v-col cols="12" :sm="isBoat ? 5 : 6" class="text-center">
@@ -422,8 +440,16 @@
 
                     <div v-else-if="['preparing', 'rebooting', 'cooldown', 'restoring'].includes(testPhase)" class="text-center mt-6">
                       <v-progress-circular indeterminate color="secondary" size="40"></v-progress-circular>
-                      <div class="mt-3">{{ testState.message }}…</div>
-                      <div v-if="testPhase === 'rebooting'" class="grey--text mt-1">This can take up to a minute.</div>
+                      <div class="mt-3">{{ testState.message }}… <span class="grey--text">({{ phaseElapsed }} s)</span></div>
+                      <div v-if="testPhase === 'rebooting'" class="grey--text mt-1">The autopilot is rebooting; this usually takes 15–60 seconds.</div>
+                      <div v-if="waitingToStart" class="wait-note mt-3">
+                        <v-icon small class="mr-1">mdi-timer-sand</v-icon>Nothing to check yet. You'll be prompted to watch, and
+                        <kbd>SPACE</kbd> becomes active, when the test starts moving.
+                      </div>
+                      <div v-else-if="testState.sweep_result" class="mt-3">
+                        Range-of-motion test finished: <result-chip :result="testState.sweep_result"></result-chip>
+                        <div class="grey--text mt-1">Putting the vehicle back to its original settings…</div>
+                      </div>
                     </div>
 
                     <div v-else-if="showOutcome && lastResult" class="mt-4">
@@ -518,7 +544,7 @@
 
               <div class="actions">
                 <v-spacer></v-spacer>
-                <v-btn color="primary" depressed large @click="restart"><v-icon left>mdi-restart</v-icon>Test another vehicle</v-btn>
+                <v-btn color="primary" depressed large @click="restart"><v-icon left>mdi-restart</v-icon>Test again</v-btn>
               </div>
             </v-stepper-content>
           </v-stepper-items>

@@ -126,7 +126,8 @@ class Runner:
     def _idle_state() -> dict:
         return {"test_id": None, "phase": "idle", "message": "", "elapsed": 0.0,
                 "duration": TEST_DURATION_S, "result": None, "fail_at_s": None,
-                "error": None, "pwm": None, "value_label": None}
+                "error": None, "pwm": None, "value_label": None,
+                "sweep_result": None}   # known as soon as the sweep ends, before restore
 
     def _set(self, **kw) -> None:
         with self._lock:
@@ -267,6 +268,8 @@ class Runner:
                     self._disable_tilt_stabilization(changes)
                 fail_at = self._run_servo_sweep(test, changes, result)
             result["fail_at_s"] = fail_at
+            self._set(sweep_result="FAIL" if fail_at is not None else
+                      ("ERROR" if result.get("output_error") else "PASS"))
             if fail_at is not None:
                 result["result"] = "FAIL"
             elif result.get("output_error"):
@@ -602,7 +605,7 @@ def wait_for_autopilot_reboot(client: MavlinkClient, report: Callable[[str], Non
             # SYSID_THISMAV was renamed MAV_SYSID in ArduPilot 4.7
             if any(client.param_get(n, timeout_s=1.5) is not None
                    for n in ("MAV_SYSID", "SYSID_THISMAV", "SERVO1_FUNCTION")):
-                time.sleep(2.0)   # let the mount/servo libraries initialise
+                time.sleep(1.0)   # let the mount/servo libraries initialise
                 return
         except MavlinkError:
             pass

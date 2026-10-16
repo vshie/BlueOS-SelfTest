@@ -234,6 +234,8 @@ new Vue({
     advanceCountdown: null,
     paused: false,
     pollTimer: null,
+    now: Date.now(),
+    phaseSince: Date.now(),
     telemetryTimer: null,
     // end-of-sequence thruster review
     review: { open: false, done: false, selected: [], submitted: false, failed: [], busy: false },
@@ -259,6 +261,23 @@ new Vue({
       ]
     },
     testPhase () { return this.testState ? this.testState.phase : 'idle' },
+    waitingToStart () {
+      return ['preparing', 'rebooting', 'cooldown'].includes(this.testPhase) && !(this.testState && this.testState.sweep_result)
+    },
+    tiltNeedsReboot () { return !!(this.currentTest && this.currentTest.category === 'tilt' && this.currentTest.stabilized) },
+    tiltStages () {
+      return [
+        { n: 1, label: 'Turn camera stabilization off and reboot the autopilot' },
+        { n: 2, label: 'Test the tilt range of motion (watch the camera)' },
+        { n: 3, label: 'Turn stabilization back on and reboot the autopilot' }
+      ]
+    },
+    tiltStage () {
+      if (!this.testState) return 0
+      if (this.testState.sweep_result) return this.testPhase === 'done' ? 4 : 3
+      return this.testPhase === 'running' ? 2 : 1
+    },
+    phaseElapsed () { return Math.max(0, Math.round((this.now - this.phaseSince) / 1000)) },
     running () { return this.testPhase === 'running' },
     busyTest () { return ['preparing', 'running', 'rebooting', 'cooldown', 'restoring'].includes(this.testPhase) },
     testProgress () {
@@ -481,6 +500,8 @@ new Vue({
         try {
           const s = await api.get('api/test/state')
           const prevPhase = this.testPhase
+          this.now = Date.now()
+          if (s.phase !== prevPhase) this.phaseSince = this.now
           this.testState = s
           if (s.restore_pending && this.status) this.status.restore_pending = s.restore_pending
           if (prevPhase !== 'done' && s.phase === 'done') this.onTestDone()
