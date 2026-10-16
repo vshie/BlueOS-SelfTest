@@ -403,6 +403,11 @@
                       roughly 15–60 seconds and telemetry drops out briefly (video keeps running). You'll be told when to watch the camera.
                     </v-alert>
 
+                    <div v-if="currentTest.category === 'tilt'" class="mt-4">
+                      <div class="diagram-caption">Live camera</div>
+                      <live-video :key="'live-' + currentTest.id"></live-video>
+                    </div>
+
                     <div v-if="tiltNeedsReboot && busyTest" class="tilt-stages mt-4">
                       <div v-for="s in tiltStages" :key="'ts' + s.n" class="tilt-stage" :class="{ current: s.n === tiltStage, done: s.n < tiltStage }">
                         <v-icon small class="mr-2" :color="s.n < tiltStage ? 'success' : (s.n === tiltStage ? 'secondary' : 'grey')">
@@ -640,6 +645,7 @@
 
 <script src="static/vendor/js/vue.min.js"></script>
 <script src="static/vendor/js/vuetify.min.js"></script>
+<script src="static/mcm_webrtc_live.js"></script>
 <script src="static/app.js"></script>
 </body>
 </html>

@@ -113,3 +113,13 @@ kbd {
 .tilt-stage { padding: 4px 0; color: var(--tuna); display: flex; align-items: center; }
 .tilt-stage.current { color: var(--oyster); font-weight: 500; }
 .tilt-stage.done { color: var(--oyster); }
+
+/* live camera preview (camera tilt test) */
+.live-video { position: relative; width: 100%; max-width: 520px; margin: 0 auto; aspect-ratio: 16 / 9;
+  background: var(--whale); border-radius: 6px; overflow: hidden; }
+.live-video video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.live-video video.hidden { visibility: hidden; }
+.live-status { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 10px; font-size: 13px;
+  color: #fff; background: rgba(1, 47, 70, .75); }
+.live-status.error { background: rgba(1, 47, 70, .9); }
+.live-status .v-icon { color: #fff !important; }

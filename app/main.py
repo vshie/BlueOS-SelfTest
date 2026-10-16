@@ -12,6 +12,7 @@ import os
 import threading
 import time
 
+import requests
 from flask import Flask, jsonify, request, send_from_directory, Response
 
 import devices
@@ -22,7 +23,7 @@ from restore_state import RestoreJournal
 from tests_runner import Runner
 from vehicle import Detector, calibration
 
-EXTENSION_VERSION = "1.3.0"     # keep in sync with the Dockerfile `version` label
+EXTENSION_VERSION = "1.4.0"     # keep in sync with the Dockerfile `version` label
 PORT = int(os.environ.get("SELFTEST_PORT", "9450"))
 LOG_DIR = os.environ.get("SELFTEST_LOG_DIR", "/app/logs")
 SIM = os.environ.get("SELFTEST_SIM", "").strip().lower()
@@ -247,6 +248,38 @@ def api_network():
         run.network(body)
     app_state["results"]["network"] = {"id": "network", "result": body.get("verdict"), **body}
     return jsonify({"ok": True})
+
+
+CAMERA_MANAGER_URL = os.environ.get("SELFTEST_CAMERA_MANAGER", "http://127.0.0.1:6020")
+
+
+@app.route("/api/streams")
+def api_streams():
+    """BlueOS camera-manager video streams the browser can play over WebRTC.
+
+    Same pass-through as vshie/BlueOS_videorecorder's /streams: the browser
+    matches the stream name against MCM's WebRTC producer list (signalling
+    on port 6021)."""
+    if SIM:
+        return jsonify({"success": True, "streams": []})
+    try:
+        r = requests.get(f"{CAMERA_MANAGER_URL}/streams", timeout=5)
+        raw = r.json()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"success": False, "message": str(e), "streams": []}), 502
+    out = []
+    for s in raw or []:
+        vas = s.get("video_and_stream") or {}
+        info = vas.get("stream_information") or {}
+        cfg = info.get("configuration") or {}
+        if cfg.get("type") not in (None, "video"):
+            continue
+        rtsp = next((ep for ep in info.get("endpoints") or []
+                     if isinstance(ep, str) and ep.lower().startswith("rtsp://")), None)
+        out.append({"stream_id": str(s.get("id") or ""), "name": vas.get("name") or "stream",
+                    "rtsp_url": rtsp, "encode": (cfg.get("encode") or "").upper(),
+                    "running": bool(s.get("running"))})
+    return jsonify({"success": True, "streams": out})
 
 
 @app.route("/api/devices/scan", methods=["POST"])

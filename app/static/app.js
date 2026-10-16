@@ -188,6 +188,85 @@ Vue.component('frame-diagram', {
   template: '#frame-diagram-template'
 })
 
+// Live camera preview over WebRTC from BlueOS's camera manager, done the same
+// way as vshie/BlueOS_videorecorder: list streams via our backend, then match
+// the stream name against MCM's WebRTC producers (signalling on :6021).
+Vue.component('live-video', {
+  data: () => ({ status: 'Connecting to camera…', error: false, playing: false }),
+  mounted () {
+    this.live = null
+    this.retryT = null
+    this.destroyed = false
+    this.start()
+  },
+  beforeDestroy () {
+    this.destroyed = true
+    clearTimeout(this.retryT)
+    try { this.live && this.live.close() } catch (e) { /* ignore */ }
+    this.live = null
+  },
+  methods: {
+    retry (ms) {
+      if (this.destroyed) return
+      clearTimeout(this.retryT)
+      this.retryT = setTimeout(() => this.start(), ms)
+    },
+    async pickStream () {
+      const d = await api.get('api/streams')
+      const list = (d && d.streams) || []
+      // H264 is the only encoding browsers reliably play over WebRTC
+      return list.find(s => s.encode === 'H264') || list[0] || null
+    },
+    async start () {
+      if (this.destroyed) return
+      if (!window.McmWebRtcLive) { this.setStatus('Live video helper failed to load', true); return }
+      try {
+        const stream = await this.pickStream()
+        if (!stream) {
+          this.setStatus('No camera stream is published in BlueOS (Video Streams) — retrying…', true)
+          return this.retry(3000)
+        }
+        if (!this.live) {
+          this.live = window.McmWebRtcLive.create(this.$refs.video, {
+            onStatus: s => this.setStatus(s, false),
+            onError: e => {
+              this.setStatus(String(e), true)
+              try { this.live && this.live.close() } catch (err) { /* ignore */ }
+              this.live = null
+              this.playing = false
+              this.retry(2000)
+            }
+          })
+          await this.live.connect()
+        }
+        try {
+          await this.live.playStream(stream.stream_id, stream.name, stream.rtsp_url)
+          this.$refs.video.onplaying = () => { this.playing = true; this.setStatus('', false) }
+        } catch (e) {
+          // MCM can list a stream before its WebRTC producer is ready
+          this.setStatus('Camera stream not ready yet — retrying…', false)
+          this.retry(2500)
+        }
+      } catch (e) {
+        this.setStatus('Live video error: ' + (e && e.message ? e.message : e), true)
+        this.retry(3000)
+      }
+    },
+    setStatus (msg, error) {
+      if (this.destroyed) return
+      this.status = msg
+      this.error = !!error
+    }
+  },
+  template: `
+    <div class="live-video">
+      <video ref="video" muted autoplay playsinline :class="{ hidden: !playing }"></video>
+      <div v-if="!playing || status" class="live-status" :class="{ error }">
+        <v-icon small class="mr-1" :color="error ? 'error' : 'grey'">mdi-video</v-icon>{{ status || 'Live video' }}
+      </div>
+    </div>`
+})
+
 Vue.component('blueboat-rotation', {
   props: ['side'],   // 'left' | 'right' | null
   template: '#blueboat-rotation-template'
