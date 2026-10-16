@@ -188,3 +188,10 @@ def test_camera_param_check_tilt_only(monkeypatch):
     out = devices.check_4k_cam_params(sim, vehicle)
     assert out["result"] == "PASS" and out["rows"][0]["max"] == 1900
     assert "no 4K camera" in out["source"]
+
+
+def test_log_name_includes_vehicle_name(tmp_path):
+    from logger import RunLog
+    run = RunLog(str(tmp_path), {"model": "BlueROV2 Heavy"}, {"vehicle_name": "Black Tourmaline"})
+    assert run.basename.endswith("_Black-Tourmaline_BlueROV2-Heavy")
+    assert RunLog(str(tmp_path), {"model": "BlueBoat"}, {}).basename.endswith("_BlueBoat")

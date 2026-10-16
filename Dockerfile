@@ -27,7 +27,7 @@ RUN sh /tmp/fetch_vendor.sh /app/static/vendor && rm /tmp/fetch_vendor.sh
 ENV PYTHONUNBUFFERED=1
 EXPOSE 9450
 
-LABEL version="1.6.3"
+LABEL version="1.6.4"
 LABEL type="tool"
 LABEL requirements="core >= 1.1"
 

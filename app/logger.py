@@ -25,7 +25,10 @@ class RunLog:
         self.log_dir = log_dir
         self._lock = threading.Lock()
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        slug = re.sub(r"[^A-Za-z0-9]+", "-", vehicle.get("model") or "vehicle").strip("-")
+        # e.g. selftest_20261016_142501_Black-Tourmaline_BlueROV2-Heavy.log
+        parts = [meta.get("vehicle_name"), vehicle.get("model") or "vehicle"]
+        slug = "_".join(re.sub(r"[^A-Za-z0-9]+", "-", str(p)).strip("-")[:40]
+                        for p in parts if p and re.sub(r"[^A-Za-z0-9]+", "", str(p)))
         self.basename = f"selftest_{stamp}_{slug}"
         self.text_path = os.path.join(log_dir, self.basename + ".log")
         self.json_path = os.path.join(log_dir, self.basename + ".json")
