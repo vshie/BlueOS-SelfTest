@@ -89,8 +89,26 @@ In BlueOS go to **Extensions → Installed → +** (manual install):
 | Docker image | `<dockerhub-user>/blueos-selftest` |
 | Docker tag | `main` (or a release tag) |
 
-Paste the `permissions` label from the Dockerfile as the custom settings. The UI runs
-on port **9450**, and in the BlueOS sidebar through `works_in_relative_paths`.
+Paste this into **Custom settings** (it's the same as the Dockerfile `permissions` label):
+
+```json
+{
+  "ExposedPorts": {
+    "9450/tcp": {}
+  },
+  "HostConfig": {
+    "CpuPeriod": 100000,
+    "CpuQuota": 100000,
+    "Binds": [
+      "/usr/blueos/extensions/selftest:/app/logs"
+    ],
+    "ExtraHosts": ["host.docker.internal:host-gateway"],
+    "NetworkMode": "host"
+  }
+}
+```
+
+The UI runs on port **9450**, and in the BlueOS sidebar through `works_in_relative_paths`.
 
 ## Development
 
