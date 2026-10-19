@@ -48,6 +48,7 @@ SUB_MOTOR_COOLDOWN_S = 11.0     # ArduSub: 10 s after a motor test timeout
 SUB_MANUAL_MODE = 19
 NEUTRAL_PWM = 1500
 DEFAULT_MOTOR_OFFSET = 200      # 1700 us: clearly visible spin without being violent
+ROVER_THROTTLE_PCT = 25         # forward thrust, roughly the same speed as +200 us
 MOTOR_TEST_DURATION_S = 3.0
 ACTUATOR_TEST_DURATION_S = 8.0  # 4 s each way so the gripper reaches both end stops
 TILT_TEST_DURATION_S = 10.0     # slow sweep with a pause at each end of travel
@@ -127,7 +128,8 @@ class Runner:
         self.settings = {"duration_s": TEST_DURATION_S, "motor_duration_s": MOTOR_TEST_DURATION_S,
                          "actuator_duration_s": ACTUATOR_TEST_DURATION_S,
                          "tilt_duration_s": TILT_TEST_DURATION_S,
-                         "motor_offset": DEFAULT_MOTOR_OFFSET}
+                         "motor_offset": DEFAULT_MOTOR_OFFSET,
+                         "rover_throttle_pct": ROVER_THROTTLE_PCT}
 
         # motor session
         self._ms_lock = threading.Lock()
@@ -137,6 +139,7 @@ class Runner:
         self._ms_touched: set = set()
         self._ms_last_use = 0.0
         self._ms_saved_mode: Optional[int] = None
+        self._ms_percent = False       # ArduRover: stream percent throttle instead of PWM
         self._sub_motor_end = 0.0
 
         threading.Thread(target=self._watchdog, daemon=True, name="watchdog").start()
@@ -447,14 +450,25 @@ class Runner:
         self._ensure_motor_session(firmware)
         idx = int(test["motor_index"])
         offset = int(self.settings["motor_offset"])
-        direction = int(test.get("direction") or 1)
-        pwm = NEUTRAL_PWM + offset * (1 if direction >= 0 else -1)
+        if firmware == "ArduRover" and self._ms_percent:
+            # Forward thrust through the motors library (honours SERVOn_REVERSED)
+            value = float(self.settings["rover_throttle_pct"])
+            label = f"{value:g}% forward throttle"
+        elif firmware == "ArduRover":
+            # Raw PWM ignores SERVOn_REVERSED, so apply it here for forward thrust
+            trim = int(test.get("pwm_trim") or NEUTRAL_PWM)
+            value = trim + offset * (-1 if test.get("reversed") else 1)
+            label = f"{value} µs (forward)"
+        else:
+            direction = int(test.get("direction") or 1)
+            value = NEUTRAL_PWM + offset * (1 if direction >= 0 else -1)
+            label = f"{value} µs"
 
         def step(_frac):
             with self._ms_lock:
-                self._ms_target = (idx, pwm)
+                self._ms_target = (idx, value)
             self._ms_last_use = time.monotonic()
-            self._set(pwm=pwm, value_label=f"{pwm} µs")
+            self._set(pwm=None if self._ms_percent else value, value_label=label)
             if not (self._ms_thread and self._ms_thread.is_alive()):
                 raise MavlinkError("Motor test stream stopped (vehicle disarmed?)")
 
@@ -467,6 +481,7 @@ class Runner:
     def _ensure_motor_session(self, firmware: str) -> None:
         if self._ms_thread and self._ms_thread.is_alive():
             return
+        self._ms_percent = False
         if firmware == "ArduSub":
             wait = SUB_MOTOR_COOLDOWN_S - (time.monotonic() - self._sub_motor_end)
             while wait > 0:
@@ -494,7 +509,17 @@ class Runner:
         else:
             if self.client.is_armed():
                 raise MavlinkError("Vehicle is already armed - disarm it before motor tests")
-            self.on_event("Motor session started (ArduRover arms itself for motor test)")
+            # Prefer percent throttle (same path as pilot input, applies
+            # SERVOn_REVERSED). Fall back to direction-corrected PWM if the
+            # autopilot refuses it (e.g. RC calibration checks).
+            first = next((t for t in (self._vehicle.get("tests") or []) if t["category"] == "motor"), None)
+            probe_motor = int(first["motor_index"]) if first else 3
+            ack = self.client.command_ack("MAV_CMD_DO_MOTOR_TEST", params={
+                1: probe_motor, 2: 0, 3: 0, 4: 1, 5: 1, 6: 2, 7: 0})
+            self._ms_percent = ack in (None, "MAV_RESULT_ACCEPTED")
+            self.on_event("Motor session started (ArduRover arms itself for motor test, "
+                          + ("percent throttle" if self._ms_percent else
+                             f"raw PWM - percent throttle refused: {ack}") + ")")
         self._ms_stop.clear()
         self._ms_touched = set()
         self._ms_last_use = time.monotonic()
@@ -507,6 +532,8 @@ class Runner:
         period = 1.0 / STREAM_HZ
         first_idx = None
         started = time.monotonic()
+        percent = self._ms_percent
+        neutral = 0 if percent else NEUTRAL_PWM
         tick = 0
         while not self._ms_stop.is_set():
             tick += 1
@@ -516,7 +543,7 @@ class Runner:
             frames = []
             for m in list(self._ms_touched):
                 if not target or m != target[0]:
-                    frames.append((m, NEUTRAL_PWM))
+                    frames.append((m, neutral))
             if target:
                 frames.append(target)
                 self._ms_touched.add(target[0])
@@ -524,9 +551,9 @@ class Runner:
             if not frames:
                 # keep the autopilot's motor test alive with a neutral frame
                 frames.append((first_idx if first_idx is not None else
-                               (0 if firmware == "ArduSub" else 3), NEUTRAL_PWM))
-            for m, pwm in frames:
-                self.client.motor_test(m, pwm, timeout_s=1.0)
+                               (0 if firmware == "ArduSub" else 3), neutral))
+            for m, value in frames:
+                self.client.motor_test(m, value, timeout_s=1.0, percent=percent)
             # once a second, make sure the autopilot is still in the test
             # (ArduSub disarms itself if it missed frames for 500 ms)
             if tick % int(STREAM_HZ) == 0 and time.monotonic() - started > 2.0 \
@@ -540,7 +567,7 @@ class Runner:
         # neutral everything we touched before letting go
         for _ in range(3):
             for m in list(self._ms_touched):
-                self.client.motor_test(m, NEUTRAL_PWM, timeout_s=0.5)
+                self.client.motor_test(m, neutral, timeout_s=0.5, percent=percent)
             time.sleep(0.05)
 
     def end_motor_session(self, reason: str = "") -> None:

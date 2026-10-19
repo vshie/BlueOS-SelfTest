@@ -53,7 +53,12 @@ wizard the log folder opens in the BlueOS File Browser.
      - ArduSub only accepts motor tests while armed. The extension switches to MANUAL,
        arms, and streams `MAV_CMD_DO_MOTOR_TEST` at 10 Hz, as the BlueOS PWM page does.
        It disarms and restores the previous mode when the motor tests end.
-     - On a BlueBoat, a stern-view graphic also shows the correct rotation: blades moving
+     - On a BlueBoat each thruster is driven at +25 % **forward throttle** in percent mode.
+       This goes through the motors library like pilot throttle, so `SERVOn_REVERSED`
+       and trim apply. (Raw PWM ignores `SERVOn_REVERSED`, so a reversed thruster spun
+       backwards.) If the autopilot refuses percent mode, a raw PWM corrected for
+       `SERVOn_REVERSED` is used instead.
+     - A stern-view picture also shows the correct rotation: blades moving
        **up in the middle**.
      - After the last thruster, a **thruster check** gives the tester a second chance to
        report any thruster that didn't work. Thrusters reported here are logged as FAIL,

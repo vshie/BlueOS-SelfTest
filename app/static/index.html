@@ -655,42 +655,16 @@
   </div>
 </script>
 
-<!-- BlueBoat thruster rotation, viewed from behind (stern). Inboard blades move UP. -->
+<!-- BlueBoat thruster rotation, viewed from behind (stern): blades move UP in the middle. -->
 <script type="text/x-template" id="blueboat-rotation-template">
-  <svg viewBox="0 0 520 300" class="boat-svg" role="img" aria-label="BlueBoat thruster rotation viewed from the stern">
-    <defs>
-      <marker id="arrowhead" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="7" refY="7" orient="auto">
-        <path d="M0,0 L14,7 L0,14 z" fill="#135ea4"></path>
-      </marker>
-      <marker id="arrowhead-up" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="9" refY="9" orient="auto">
-        <path d="M0,0 L18,9 L0,18 z" fill="#7ac943"></path>
-      </marker>
-    </defs>
-    <text x="260" y="22" text-anchor="middle" class="svg-caption">Viewed from behind the boat (stern)</text>
-    <!-- deck + hulls -->
-    <rect x="60" y="45" width="400" height="22" rx="6" fill="#403b3b"></rect>
-    <rect x="70" y="67" width="90" height="62" rx="20" fill="#909d8d"></rect>
-    <rect x="360" y="67" width="90" height="62" rx="20" fill="#909d8d"></rect>
-    <!-- left thruster: counter-clockwise viewed from behind (inboard side moves up) -->
-    <g :class="{ active: side === 'left', dim: side === 'right' }">
-      <circle cx="115" cy="200" r="40" fill="#fff" stroke="#403b3b" stroke-width="4"></circle>
-      <circle cx="115" cy="200" r="8" fill="#403b3b"></circle>
-      <path d="M 125 255 A 56 56 0 0 0 125 145" fill="none" stroke="#7ac943" stroke-width="6" marker-end="url(#arrowhead-up)"></path>
-      <path d="M 105 145 A 56 56 0 0 0 105 255" fill="none" stroke="#135ea4" stroke-width="3" marker-end="url(#arrowhead)"></path>
-      <text x="115" y="288" text-anchor="middle" class="svg-label">LEFT (port)</text>
-    </g>
-    <!-- right thruster: clockwise viewed from behind (inboard side moves up) -->
-    <g :class="{ active: side === 'right', dim: side === 'left' }">
-      <circle cx="405" cy="200" r="40" fill="#fff" stroke="#403b3b" stroke-width="4"></circle>
-      <circle cx="405" cy="200" r="8" fill="#403b3b"></circle>
-      <path d="M 395 255 A 56 56 0 0 1 395 145" fill="none" stroke="#7ac943" stroke-width="6" marker-end="url(#arrowhead-up)"></path>
-      <path d="M 415 145 A 56 56 0 0 1 415 255" fill="none" stroke="#135ea4" stroke-width="3" marker-end="url(#arrowhead)"></path>
-      <text x="405" y="288" text-anchor="middle" class="svg-label">RIGHT (starboard)</text>
-    </g>
-    <text x="260" y="190" text-anchor="middle" class="svg-up">▲ UP</text>
-    <text x="260" y="211" text-anchor="middle" class="svg-caption">blades move up</text>
-    <text x="260" y="227" text-anchor="middle" class="svg-caption">in the middle</text>
-  </svg>
+  <div class="boat-stern">
+    <div class="boat-stern-img">
+      <img src="static/images/blueboat-stern.png" alt="BlueBoat viewed from behind, showing thruster rotation">
+      <div class="stern-half left" :class="{ dim: side === 'right' }"></div>
+      <div class="stern-half right" :class="{ dim: side === 'left' }"></div>
+    </div>
+    <div class="boat-labels"><span>PORT (left)</span><span>Viewed from behind · blades move up in the middle</span><span>STARBOARD (right)</span></div>
+  </div>
 </script>
 
 <script src="static/vendor/js/vue.min.js"></script>

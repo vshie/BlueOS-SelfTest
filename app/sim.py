@@ -137,8 +137,8 @@ class SimClient:
     def disarm(self, force=True):
         return self.command_ack("MAV_CMD_COMPONENT_ARM_DISARM", params={1: 0})
 
-    def motor_test(self, motor, pwm, timeout_s=1.0):
-        return self.command_long("MAV_CMD_DO_MOTOR_TEST", {1: motor, 2: 1, 3: pwm})
+    def motor_test(self, motor, value, timeout_s=1.0, percent=False):
+        return self.command_long("MAV_CMD_DO_MOTOR_TEST", {1: motor, 2: 0 if percent else 1, 3: value})
 
     def reboot_autopilot(self):
         return self.command_ack("MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN", params={1: 1})

@@ -189,6 +189,7 @@ class Detector:
                 t["motor_index"] = t["motor_number"] - 1
             if t["category"] == "motor" and firmware == "ArduRover":
                 t["motor_index"] = t["rover_motor_id"]
+                t["reversed"] = bool(self._p(f"SERVO{ch}_REVERSED", 0))
             t["kind"] = t["category"]
             t["id"] = f"{t['category']}_ch{ch}"
             key = "motor_boat" if t["category"] == "motor" and model_key == "blueboat" else t["category"]

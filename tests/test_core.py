@@ -214,3 +214,14 @@ def test_other_blueos_host_not_called_sonoptix(monkeypatch):
     monkeypatch.setattr(devices, "blueos_identity", lambda ip: None)
     assert devices.identify("192.168.2.2", [80, 8081], set()) is None
     assert devices.identify("192.168.2.42", [80, 8081], set()) == "Sonoptix Echo (likely)"
+
+
+def test_rover_motor_uses_percent_forward_throttle(tmp_path):
+    client, vehicle, journal, runner, results = make_runner(tmp_path, "blueboat")
+    motor = vehicle["tests"][0]
+    runner.start(motor)
+    wait_done(runner)
+    runner.end_motor_session("test")
+    assert results[-1]["result"] == "PASS"
+    frames = [p for cmd, p in client.command_log if cmd == "MAV_CMD_DO_MOTOR_TEST" and p.get(3)]
+    assert frames and all(p[2] == 0 and p[3] == 25 for p in frames)   # percent, +25 %

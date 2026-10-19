@@ -63,13 +63,6 @@ kbd {
 .br-footer { font-size: 13px; color: var(--tuna); border-top: 1px solid #eef0f2 !important; }
 .br-footer a { color: var(--br-blue); text-decoration: none; }
 
-.boat-svg { width: 100%; max-width: 520px; }
-.boat-svg .svg-caption { font: 13px Roboto, sans-serif; fill: var(--tuna); }
-.boat-svg .svg-label { font: 500 14px Roboto, sans-serif; fill: var(--oyster); }
-.boat-svg .svg-up { font: 700 16px Roboto, sans-serif; fill: var(--pass); }
-.boat-svg g { transition: opacity .2s; }
-.boat-svg g.dim { opacity: .25; }
-.boat-svg g.active circle:first-child { stroke: var(--br-blue); }
 
 @media (max-width: 600px) {
   .br-logo { height: 24px; }
@@ -142,3 +135,11 @@ kbd {
   background: var(--mariner); transition: left .2s linear; }
 .pwm-labels { position: relative; height: 16px; font-size: 11px; color: var(--tuna); }
 .pwm-labels span { position: absolute; transform: translateX(-50%); top: 4px; white-space: nowrap; }
+
+.boat-stern { width: 100%; max-width: 560px; margin: 0 auto; }
+.boat-stern-img { position: relative; }
+.boat-stern-img img { width: 100%; display: block; }
+.stern-half { position: absolute; top: 0; bottom: 0; width: 50%; transition: background .2s; }
+.stern-half.left { left: 0; }
+.stern-half.right { right: 0; }
+.stern-half.dim { background: rgba(255, 255, 255, .7); }

@@ -263,14 +263,20 @@ class MavlinkClient:
         return self.command_ack("MAV_CMD_COMPONENT_ARM_DISARM",
                                 params={1: 0, 2: 21196 if force else 0})
 
-    def motor_test(self, motor: int, pwm: int, timeout_s: float = 1.0) -> bool:
-        """One MAV_CMD_DO_MOTOR_TEST frame (PWM throttle, board order).
+    def motor_test(self, motor: int, value: float, timeout_s: float = 1.0,
+                   percent: bool = False) -> bool:
+        """One MAV_CMD_DO_MOTOR_TEST frame (board order).
+
+        ``percent=False`` sends a raw PWM (MOTOR_TEST_THROTTLE_PWM): the value
+        goes straight to the output, ignoring SERVOn_REVERSED. ``percent=True``
+        (MOTOR_TEST_THROTTLE_PERCENT) goes through the motors library like
+        pilot throttle, so reversal and trim apply; ArduRover accepts -100..100.
 
         ArduSub needs these at >= 2 Hz or it ends the test and disarms;
         callers stream at 10 Hz like the BlueOS PWM setup page does.
         """
         return self.command_long("MAV_CMD_DO_MOTOR_TEST", {
-            1: motor, 2: 1, 3: pwm, 4: timeout_s, 5: 1, 6: 2, 7: 0})
+            1: motor, 2: 0 if percent else 1, 3: value, 4: timeout_s, 5: 1, 6: 2, 7: 0})
 
     def reboot_autopilot(self) -> Optional[str]:
         return self.command_ack("MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN", params={1: 1})
