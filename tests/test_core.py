@@ -195,3 +195,22 @@ def test_log_name_includes_vehicle_name(tmp_path):
     run = RunLog(str(tmp_path), {"model": "BlueROV2 Heavy"}, {"vehicle_name": "Black Tourmaline"})
     assert run.basename.endswith("_Black-Tourmaline_BlueROV2-Heavy")
     assert RunLog(str(tmp_path), {"model": "BlueBoat"}, {}).basename.endswith("_BlueBoat")
+
+
+def test_pick_autopilot_prefers_own_vehicle():
+    from mavlink import pick_autopilot
+
+    def hb(mavtype):
+        return {"components": {"1": {"messages": {"HEARTBEAT": {"message": {
+            "autopilot": {"type": "MAV_AUTOPILOT_ARDUPILOTMEGA"}, "mavtype": {"type": mavtype}}}}}}}
+    vehicles = {"1": hb("MAV_TYPE_SUBMARINE"), "3": hb("MAV_TYPE_SURFACE_BOAT")}
+    assert pick_autopilot(vehicles, ("MAV_TYPE_SURFACE_BOAT",)) == (3, 1)
+    assert pick_autopilot(vehicles, ("MAV_TYPE_SUBMARINE",)) == (1, 1)
+
+
+def test_other_blueos_host_not_called_sonoptix(monkeypatch):
+    monkeypatch.setattr(devices, "blueos_identity", lambda ip: 'ArduSub vehicle (BlueOS 1.4.6) "TowFish"')
+    assert devices.identify("192.168.2.2", [80, 8080, 8081], set()).startswith("ArduSub vehicle")
+    monkeypatch.setattr(devices, "blueos_identity", lambda ip: None)
+    assert devices.identify("192.168.2.2", [80, 8081], set()) is None
+    assert devices.identify("192.168.2.42", [80, 8081], set()) == "Sonoptix Echo (likely)"

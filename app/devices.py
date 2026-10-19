@@ -205,11 +205,15 @@ def local_subnets() -> tuple:
     nets, own = set(), set()
     eth = blueos_json("/cable-guy/v1.0/ethernet") or []
     for iface in eth if isinstance(eth, list) else []:
+        # usb0 is the Pi's USB-gadget link to a laptop, not the vehicle network
+        scan_iface = not str(iface.get("name", "")).startswith(("usb", "lo", "docker", "veth"))
         for addr in iface.get("addresses") or []:
             ip = addr.get("ip")
             if not ip:
                 continue
             own.add(ip)
+            if not scan_iface:
+                continue
             try:
                 net = ipaddress.ip_network(f"{ip}/24", strict=False)
                 if net.is_private and not net.is_link_local:
@@ -251,9 +255,49 @@ def arp_table() -> dict:
     return out
 
 
+SONOPTIX_DEFAULT_SUFFIX = ".42"   # Sonoptix Echo default 192.168.2.42
+
+
+def blueos_identity(ip: str) -> Optional[str]:
+    """Describe another BlueOS computer (e.g. a towfish on the boat's tether).
+
+    Every BlueOS host serves nginx on 80 plus the version chooser on 8081, so
+    this must run before any port-based guesses. Such hosts are only
+    identified, never probed further."""
+    try:
+        ver = requests.get(f"http://{ip}/version-chooser/v1.0/version/current", timeout=1.5)
+        if not ver.ok or "tag" not in ver.text:
+            return None
+        tag = ver.json().get("tag")
+    except Exception:  # noqa: BLE001
+        return None
+    name = None
+    try:
+        r = requests.get(f"http://{ip}/beacon/v1.0/vehicle_name", timeout=1.5)
+        name = r.json() if r.ok else None
+    except Exception:  # noqa: BLE001
+        pass
+    kind = "BlueOS computer"
+    try:
+        r = requests.get(f"http://{ip}/ardupilot-manager/v1.0/firmware_vehicle_type", timeout=1.5)
+        fw = r.json() if r.ok else None
+        if isinstance(fw, str) and fw:
+            kind = f"{fw} vehicle"
+    except Exception:  # noqa: BLE001
+        pass
+    label = f"{kind} (BlueOS {tag})"
+    return f"{label} \"{name}\"" if name else label
+
+
 def identify(ip: str, ports: list, own: set) -> Optional[str]:
     if ip in own:
         return "This vehicle (BlueOS)"
+    if 80 in ports and 8081 in ports:
+        other = blueos_identity(ip)
+        if other:
+            return other
+    if ip == "192.168.2.10" and (80 in ports or 554 in ports):
+        return "4K camera"
     if 80 in ports:
         try:
             r = requests.get(f"http://{ip}/api/v1/about", timeout=1.5)
@@ -263,8 +307,8 @@ def identify(ip: str, ports: list, own: set) -> Optional[str]:
             pass
     if 16171 in ports:
         return "Water Linked DVL"
-    if 8081 in ports or ip.endswith(".42"):
-        return "Sonoptix Echo (likely)" if 8081 in ports else None
+    if ip.endswith(SONOPTIX_DEFAULT_SUFFIX) and (80 in ports or 8081 in ports):
+        return "Sonoptix Echo (likely)"
     if 51200 in ports:
         return "Cerulean sonar (Omniscan / S500)"
     if 554 in ports:

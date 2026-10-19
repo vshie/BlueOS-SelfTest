@@ -69,10 +69,22 @@ def enum_value(message: dict, field: str) -> str:
     return str(value or "")
 
 
-def pick_autopilot(vehicles) -> Optional[tuple]:
-    """Return ``(system_id, component_id)`` of a real autopilot, or None."""
+# HEARTBEAT mavtypes for each BlueOS firmware type
+FIRMWARE_MAVTYPES = {
+    "ArduSub": ("MAV_TYPE_SUBMARINE",),
+    "ArduRover": ("MAV_TYPE_SURFACE_BOAT", "MAV_TYPE_GROUND_ROVER"),
+}
+
+
+def pick_autopilot(vehicles, prefer_mavtypes=()) -> Optional[tuple]:
+    """Return ``(system_id, component_id)`` of a real autopilot, or None.
+
+    A boat towing a BlueOS towfish can see both autopilots on the shared
+    MAVLink network; ``prefer_mavtypes`` picks the one matching this
+    vehicle's own firmware."""
     if not isinstance(vehicles, dict):
         return None
+    found = []
     for vid, vehicle in vehicles.items():
         try:
             sysid = int(vid)
@@ -87,8 +99,11 @@ def pick_autopilot(vehicles) -> Optional[tuple]:
             heartbeat = ((((component or {}).get("messages") or {})
                           .get("HEARTBEAT") or {}).get("message") or {})
             if enum_value(heartbeat, "autopilot") in _REAL_AUTOPILOTS:
-                return sysid, comp
-    return None
+                found.append((sysid, comp, enum_value(heartbeat, "mavtype")))
+    for sysid, comp, mavtype in found:
+        if mavtype in prefer_mavtypes:
+            return sysid, comp
+    return (found[0][0], found[0][1]) if found else None
 
 
 class MavlinkClient:
@@ -113,7 +128,9 @@ class MavlinkClient:
         candidates = [self.base_url] if self.base_url else list(CANDIDATE_BASE_URLS)
         for base in candidates:
             vehicles = self._get_json_abs(f"{base}/mavlink/vehicles")
-            found = pick_autopilot(vehicles)
+            root = base.rsplit("/mavlink2rest", 1)[0].replace(":6040", "")
+            firmware = self._get_json_abs(f"{root}/ardupilot-manager/v1.0/firmware_vehicle_type")
+            found = pick_autopilot(vehicles, FIRMWARE_MAVTYPES.get(firmware, ()) if isinstance(firmware, str) else ())
             if found:
                 self.base_url = base
                 self.target_system, self.target_component = found
